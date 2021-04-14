@@ -1,0 +1,499 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sources &#8212; Lumen 0.4.1 documentation</title>
+    
+  <link href="../_static/css/theme.css" rel="stylesheet" />
+  <link href="../_static/css/index.ee6fb81b276d6fba8a971ad8e9b95dd9.css" rel="stylesheet" />
+
+    
+  <link rel="stylesheet"
+    href="../_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    
+      
+
+    
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
+    
+  <link rel="preload" as="script" href="../_static/js/index.c86189f1ce1b71a67eb6.js">
+
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Views" href="view.html" />
+    <link rel="prev" title="Architecture" href="index.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="en" />
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="80">
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+    <nav class="navbar navbar-light navbar-expand-lg bg-light fixed-top bd-navbar" id="navbar-main"><div class="container-xl">
+
+  <div id="navbar-start">
+    
+    
+<a class="navbar-brand" href="../index.html">
+<p class="title">Lumen</p>
+</a>
+
+    
+  </div>
+
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbar-collapsible" aria-controls="navbar-collapsible" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+
+  
+  <div id="navbar-collapsible" class="col-lg-9 collapse navbar-collapse">
+    <div id="navbar-center" class="mr-auto">
+      
+      <div class="navbar-center-item">
+        <ul id="navbar-main-elements" class="navbar-nav">
+    <li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../index.html">
+  Home
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../dashboard.html">
+  Dashboard Specification
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../gallery/index.html">
+  Gallery
+ </a>
+</li>
+
+<li class="toctree-l1 current active nav-item">
+ <a class="reference internal nav-link" href="index.html">
+  Architecture
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../rest.html">
+  REST Specification
+ </a>
+</li>
+
+    
+</ul>
+      </div>
+      
+    </div>
+
+    <div id="navbar-end">
+      
+      <div class="navbar-end-item">
+        <ul id="navbar-icon-links" class="navbar-nav" aria-label="Icon Links">
+        <li class="nav-item">
+          <a class="nav-link" href="https://github.com/holoviz/lumen" rel="noopener" target="_blank" title="GitHub">
+            <span><i class="fab fa-github-square"></i></span>
+            <label class="sr-only">GitHub</label>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="https://https://discourse.holoviz.org/" rel="noopener" target="_blank" title="Discourse">
+            <span><i class="fab fa-discourse"></i></span>
+            <label class="sr-only">Discourse</label>
+          </a>
+        </li>
+      </ul>
+      </div>
+      
+    </div>
+  </div>
+</div>
+    </nav>
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+            
+            <!-- Only show if we have sidebars configured, else just a small margin  -->
+            <div class="col-12 col-md-3 bd-sidebar"><form class="bd-search d-flex align-items-center" action="../search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main navigation">
+  <div class="bd-toc-item active">
+    <ul class="current nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="index.html">
+   Architecture
+  </a>
+ </li>
+ <li class="toctree-l1 current active">
+  <a class="current reference internal" href="#">
+   Source
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="view.html">
+   View
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="filter.html">
+   Filter
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="transform.html">
+   Transform
+  </a>
+ </li>
+</ul>
+
+  </div>
+</nav>
+            </div>
+            
+          
+
+          
+          <div class="d-none d-xl-block col-xl-2 bd-toc">
+            
+              
+              <div class="toc-item">
+                
+<div class="tocsection onthispage pt-5 pb-3">
+    <i class="fas fa-list"></i> On this page
+</div>
+
+<nav id="bd-toc-nav">
+    <ul class="visible nav section-nav flex-column">
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#source-types">
+   Source types
+  </a>
+ </li>
+</ul>
+
+</nav>
+              </div>
+              
+              <div class="toc-item">
+                
+              </div>
+              
+            
+          </div>
+          
+
+          
+          
+            
+          
+          <main class="col-12 col-md-9 col-xl-7 py-md-5 pl-md-5 pr-md-4 bd-content" role="main">
+              
+              <div>
+                
+  <div class="section" id="sources">
+<h1>Sources<a class="headerlink" href="#sources" title="Permalink to this headline">¶</a></h1>
+<p>The <a class="reference internal" href="#lumen.sources.Source" title="lumen.sources.Source"><span class="xref myst py py-class">Source</span></a> classes are the data provider for
+the entire dashboard. They handle querying some remote source such as
+a REST server, a website or some other provider and provide methods to
+return a set of tables (using the <code class="docutils literal notranslate"><span class="pre">.get</span></code> method) and JSON schemas
+describing the tables (using the <code class="docutils literal notranslate"><span class="pre">.get_schema</span></code> method).</p>
+<dl class="py class">
+<dt id="lumen.sources.Source">
+<em class="property"><span class="pre">class</span> </em><code class="sig-prename descclassname"><span class="pre">lumen.sources.</span></code><code class="sig-name descname"><span class="pre">Source</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.Source" title="Permalink to this definition">¶</a></dt>
+<dd><p>A Source provides a set of tables which declare their available
+fields. The Source must also be able to return a schema describing
+the types of the variables and indexes in each table and allow
+querying the data.</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">cache_dir</span></code> = param.String(readonly=False)</dt><dd><p>Whether to enable local cache and write file to disk.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">shared</span></code> = param.Boolean(readonly=False)</dt><dd><p>Whether the Source can be shared across all instances of the
+        dashboard. If set to <cite>True</cite> the Source will be loaded on
+        initial server load.</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt id="lumen.sources.Source.clear_cache">
+<code class="sig-name descname"><span class="pre">clear_cache</span></code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.Source.clear_cache" title="Permalink to this definition">¶</a></dt>
+<dd><p>Clears any cached data.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="lumen.sources.Source.from_spec">
+<em class="property"><span class="pre">classmethod</span> </em><code class="sig-name descname"><span class="pre">from_spec</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sources</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.Source.from_spec" title="Permalink to this definition">¶</a></dt>
+<dd><p>Creates a Source object from a specification. If a Source
+specification references other sources these may be supplied
+in the sources dictionary and be referenced by name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>spec</strong> (<em>dict</em><em> or </em><em>str</em>) – Specification declared as a dictionary of parameter values
+or a string referencing a source in the sources dictionary.</p></li>
+<li><p><strong>sources</strong> (<em>dict</em>) – Dictionary of other Source objects</p></li>
+<li><p><strong>root</strong> (<em>str</em>) – Root directory where dashboard specification was loaded
+from.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p></p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>Resolved and instantiated Source object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="lumen.sources.Source.get">
+<code class="sig-name descname"><span class="pre">get</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">table</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">query</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.Source.get" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a table; optionally filtered by the given query.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>table</strong> (<em>str</em>) – The name of the table to query</p></li>
+<li><p><strong>query</strong> (<em>dict</em>) – A dictionary containing all the query parameters</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A DataFrame containing the queried table.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="lumen.sources.Source.get_schema">
+<code class="sig-name descname"><span class="pre">get_schema</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">table</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.Source.get_schema" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns JSON schema describing the tables returned by the
+Source.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>table</strong> (<em>str</em><em> or </em><em>None</em>) – The name of the table to return the schema for. If None
+returns schema for all available tables.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>JSON schema(s) for one or all the tables.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="lumen.sources.Source.get_tables">
+<code class="sig-name descname"><span class="pre">get_tables</span></code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.Source.get_tables" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the list of tables available on this source.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The list of available tables on this source.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt id="lumen.sources.Source.panel">
+<em class="property"><span class="pre">property</span> </em><code class="sig-name descname"><span class="pre">panel</span></code><a class="headerlink" href="#lumen.sources.Source.panel" title="Permalink to this definition">¶</a></dt>
+<dd><p>A Source can return a Panel object which displays information
+about the Source or controls how the Source queries data.</p>
+</dd></dl>
+
+</dd></dl>
+
+<div class="section" id="source-types">
+<h2>Source types<a class="headerlink" href="#source-types" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt id="lumen.sources.JoinedSource">
+<em class="property"><span class="pre">class</span> </em><code class="sig-prename descclassname"><span class="pre">lumen.sources.</span></code><code class="sig-name descname"><span class="pre">JoinedSource</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.JoinedSource" title="Permalink to this definition">¶</a></dt>
+<dd><p>A JoinedSource applies a join on two or more sources returning
+new table(s) with data from all sources. It iterates over the
+<cite>tables</cite> specification and merges the specified tables from the
+declared sources on the supplied index.</p>
+<p>In this way multiple tables from multiple sources can be merged.
+Individual tables from sources that should not be joined may also
+be surfaced by declaring a single source and table in the
+specification.</p>
+<p>As a simple example we may have sources A and B, which contain
+tables ‘foo’ and ‘bar’ respectively. We now want to merge these
+tables on column ‘a’ in Table A with column ‘b’ in Table B:</p>
+<blockquote>
+<div><dl class="simple">
+<dt>{‘new_table’: [</dt><dd><p>{‘source’: ‘A’, ‘table’: ‘foo’, ‘index’: ‘a’},
+{‘source’: ‘B’, ‘table’: ‘bar’, ‘index’: ‘b’}</p>
+</dd>
+</dl>
+<p>]}</p>
+</div></blockquote>
+<p>The joined source will now publish the “new_table” with all
+columns from tables “foo” and “bar” except for the index column
+from table “bar”, which was merged with the index column “a” from
+table “foo”.</p>
+<p>Parameters inherited from:</p>
+<blockquote>
+<div><p><code class="xref py py-class docutils literal notranslate"><span class="pre">lumen.sources.base.Source</span></code>: cache_dir, shared</p>
+</div></blockquote>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">sources</span></code> = param.Dict(readonly=False)</dt><dd><p>A dictionary of sources indexed by their assigned name.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">tables</span></code> = param.Dict(readonly=False)</dt><dd><p>A dictionary with the names of the joined sources as keys
+        and a specification of the source, table and index to merge
+        on.
+
+        {“new_table”: [
+            {‘source’: &lt;source_name&gt;,
+             ‘table’: &lt;table_name&gt;,
+             ‘index’: &lt;index_name&gt;
+            },
+            {‘source’: &lt;source_name&gt;,
+             ‘table’: &lt;table_name&gt;,
+             ‘index’: &lt;index_name&gt;
+            },
+            …
+        ]}</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt id="lumen.sources.FileSource">
+<em class="property"><span class="pre">class</span> </em><code class="sig-prename descclassname"><span class="pre">lumen.sources.</span></code><code class="sig-name descname"><span class="pre">FileSource</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.FileSource" title="Permalink to this definition">¶</a></dt>
+<dd><p>Loads CSV, Excel, JSON and Parquet files using pandas.read_* or
+dask.read_* functions.</p>
+<p>Parameters inherited from:</p>
+<blockquote>
+<div><p><code class="xref py py-class docutils literal notranslate"><span class="pre">lumen.sources.base.Source</span></code>: cache_dir, shared</p>
+</div></blockquote>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">dask</span></code> = param.Boolean(readonly=False)</dt><dd><p>Whether to return a Dask dataframe.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">kwargs</span></code> = param.Dict(readonly=False)</dt><dd><p>Keyword arguments to the pandas/dask loading function.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">tables</span></code> = param.ClassSelector(readonly=False)</dt><dd><p>List or dictionary of tables to load. If a list is supplied the
+        names are computed from the filenames, otherwise the keys are
+        the names. The values must filepaths or URLs to the data:
+
+            {
+              ‘local’ : ‘/home/user/local_file.csv’,
+              ‘remote’: ‘<a class="reference external" href="https://test.com/test.csv">https://test.com/test.csv</a>’
+            }
+
+        if the filepath does not have a declared extension an extension
+        may be provided in a list or tuple, e.g.:
+
+            {‘table’: [‘<a class="reference external" href="http://test.com/api">http://test.com/api</a>’, ‘json’]}</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">use_dask</span></code> = param.Boolean(readonly=False)</dt><dd><p>Whether to use dask to load files.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt id="lumen.sources.PanelSessionSource">
+<em class="property"><span class="pre">class</span> </em><code class="sig-prename descclassname"><span class="pre">lumen.sources.</span></code><code class="sig-name descname"><span class="pre">PanelSessionSource</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.PanelSessionSource" title="Permalink to this definition">¶</a></dt>
+<dd><p>Parameters inherited from:</p>
+<blockquote>
+<div><p><code class="xref py py-class docutils literal notranslate"><span class="pre">lumen.sources.base.Source</span></code>: cache_dir, shared</p>
+</div></blockquote>
+<p><code class="docutils literal notranslate"><span class="pre">endpoint</span></code> = param.String(readonly=False)</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">urls</span></code> = param.List(readonly=False)</dt><dd><p>URL of the websites to monitor.</p>
+</dd>
+</dl>
+<p><code class="docutils literal notranslate"><span class="pre">timeout</span></code> = param.Parameter(readonly=False)</p>
+</dd></dl>
+
+<dl class="py class">
+<dt id="lumen.sources.RESTSource">
+<em class="property"><span class="pre">class</span> </em><code class="sig-prename descclassname"><span class="pre">lumen.sources.</span></code><code class="sig-name descname"><span class="pre">RESTSource</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.RESTSource" title="Permalink to this definition">¶</a></dt>
+<dd><p>Queries a REST API which is expected to conform to the monitoring
+REST API specification.</p>
+<p>Parameters inherited from:</p>
+<blockquote>
+<div><p><code class="xref py py-class docutils literal notranslate"><span class="pre">lumen.sources.base.Source</span></code>: cache_dir, shared</p>
+</div></blockquote>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">url</span></code> = param.String(readonly=False)</dt><dd><p>URL of the REST endpoint to monitor.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt id="lumen.sources.WebsiteSource">
+<em class="property"><span class="pre">class</span> </em><code class="sig-prename descclassname"><span class="pre">lumen.sources.</span></code><code class="sig-name descname"><span class="pre">WebsiteSource</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#lumen.sources.WebsiteSource" title="Permalink to this definition">¶</a></dt>
+<dd><p>Queries whether a website responds with a 400 status code.</p>
+<p>Parameters inherited from:</p>
+<blockquote>
+<div><p><code class="xref py py-class docutils literal notranslate"><span class="pre">lumen.sources.base.Source</span></code>: cache_dir, shared</p>
+</div></blockquote>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">urls</span></code> = param.List(readonly=False)</dt><dd><p>URLs of the websites to monitor.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+</div>
+
+
+              </div>
+              
+              
+              <div class='prev-next-bottom'>
+                
+    <a class='left-prev' id="prev-link" href="index.html" title="previous page">Architecture</a>
+    <a class='right-next' id="next-link" href="view.html" title="next page">Views</a>
+
+              </div>
+              
+          </main>
+          
+
+      </div>
+    </div>
+    
+  <script src="../_static/js/index.c86189f1ce1b71a67eb6.js"></script>
+
+
+    <footer class="footer mt-5 mt-md-0">
+  <div class="container">
+    
+    <div class="footer-item">
+      <p class="copyright">
+    &copy; Copyright 2020-2021, HoloViz Developers.<br/>
+</p>
+    </div>
+    
+    <div class="footer-item">
+      <p class="sphinx-version">
+Created using <a href="http://sphinx-doc.org/">Sphinx</a> 3.5.4.<br/>
+</p>
+    </div>
+    
+  </div>
+</footer>
+  </body>
+</html>

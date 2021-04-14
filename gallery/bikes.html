@@ -1,0 +1,328 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transport for London: Bike Point Occupancy &#8212; Lumen 0.4.1 documentation</title>
+    
+  <link href="../_static/css/theme.css" rel="stylesheet" />
+  <link href="../_static/css/index.ee6fb81b276d6fba8a971ad8e9b95dd9.css" rel="stylesheet" />
+
+    
+  <link rel="stylesheet"
+    href="../_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    
+      
+
+    
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
+    
+  <link rel="preload" as="script" href="../_static/js/index.c86189f1ce1b71a67eb6.js">
+
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Architecture" href="../architecture/index.html" />
+    <link rel="prev" title="NYC Taxi" href="nyc_taxi.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="en" />
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="80">
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+    <nav class="navbar navbar-light navbar-expand-lg bg-light fixed-top bd-navbar" id="navbar-main"><div class="container-xl">
+
+  <div id="navbar-start">
+    
+    
+<a class="navbar-brand" href="../index.html">
+<p class="title">Lumen</p>
+</a>
+
+    
+  </div>
+
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbar-collapsible" aria-controls="navbar-collapsible" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+
+  
+  <div id="navbar-collapsible" class="col-lg-9 collapse navbar-collapse">
+    <div id="navbar-center" class="mr-auto">
+      
+      <div class="navbar-center-item">
+        <ul id="navbar-main-elements" class="navbar-nav">
+    <li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../index.html">
+  Home
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../dashboard.html">
+  Dashboard Specification
+ </a>
+</li>
+
+<li class="toctree-l1 current active nav-item">
+ <a class="reference internal nav-link" href="index.html">
+  Gallery
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../architecture/index.html">
+  Architecture
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../rest.html">
+  REST Specification
+ </a>
+</li>
+
+    
+</ul>
+      </div>
+      
+    </div>
+
+    <div id="navbar-end">
+      
+      <div class="navbar-end-item">
+        <ul id="navbar-icon-links" class="navbar-nav" aria-label="Icon Links">
+        <li class="nav-item">
+          <a class="nav-link" href="https://github.com/holoviz/lumen" rel="noopener" target="_blank" title="GitHub">
+            <span><i class="fab fa-github-square"></i></span>
+            <label class="sr-only">GitHub</label>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="https://https://discourse.holoviz.org/" rel="noopener" target="_blank" title="Discourse">
+            <span><i class="fab fa-discourse"></i></span>
+            <label class="sr-only">Discourse</label>
+          </a>
+        </li>
+      </ul>
+      </div>
+      
+    </div>
+  </div>
+</div>
+    </nav>
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+            
+            <!-- Only show if we have sidebars configured, else just a small margin  -->
+            <div class="col-12 col-md-3 bd-sidebar"><form class="bd-search d-flex align-items-center" action="../search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main navigation">
+  <div class="bd-toc-item active">
+    <ul class="current nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="index.html">
+   Gallery
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="precip.html">
+   Precipitation
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="penguins.html">
+   Penguins
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="nyc_taxi.html">
+   NYC Taxi Trips
+  </a>
+ </li>
+ <li class="toctree-l1 current active">
+  <a class="current reference internal" href="#">
+   London Bike Points
+  </a>
+ </li>
+</ul>
+
+  </div>
+</nav>
+            </div>
+            
+          
+
+          
+          <div class="d-none d-xl-block col-xl-2 bd-toc">
+            
+              
+              <div class="toc-item">
+                
+
+<nav id="bd-toc-nav">
+    
+</nav>
+              </div>
+              
+              <div class="toc-item">
+                
+              </div>
+              
+            
+          </div>
+          
+
+          
+          
+            
+          
+          <main class="col-12 col-md-9 col-xl-7 py-md-5 pl-md-5 pr-md-4 bd-content" role="main">
+              
+              <div>
+                
+  <div class="section" id="transport-for-london-bike-point-occupancy">
+<h1>Transport for London: Bike Point Occupancy<a class="headerlink" href="#transport-for-london-bike-point-occupancy" title="Permalink to this headline">¶</a></h1>
+<img src="../_static/bikes.png" width="100%">
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">config</span><span class="p">:</span>
+  <span class="nt">title</span><span class="p">:</span> <span class="s">&quot;Transport</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">London:</span><span class="nv"> </span><span class="s">Bike</span><span class="nv"> </span><span class="s">Station</span><span class="nv"> </span><span class="s">Occupancy&quot;</span>
+  <span class="nt">layout</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">column</span>
+<span class="nt">sources</span><span class="p">:</span>
+  <span class="nt">stations</span><span class="p">:</span>
+    <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">json</span>
+    <span class="nt">shared</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+    <span class="nt">tables</span><span class="p">:</span>
+      <span class="nt">stations</span><span class="p">:</span> <span class="s">&quot;https://api.tfl.gov.uk/BikePoint/&quot;</span>
+  <span class="nt">occupancy</span><span class="p">:</span>
+    <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">json</span>
+    <span class="nt">chunk_size</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">15</span>
+    <span class="nt">cache_dir</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">cache</span>
+    <span class="nt">tables</span><span class="p">:</span>
+      <span class="nt">occupancy</span><span class="p">:</span> <span class="s">&quot;https://api.tfl.gov.uk/Occupancy/BikePoints/@{stations.stations.id}?app_key=a1c692de000b4944af55f59d8e849915&quot;</span>
+  <span class="nt">station_occupancy</span><span class="p">:</span>
+    <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">join</span>
+    <span class="nt">sources</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">stations</span><span class="p p-Indicator">,</span> <span class="nv">occupancy</span><span class="p p-Indicator">]</span>
+    <span class="nt">tables</span><span class="p">:</span>
+      <span class="nt">station_occupancy</span><span class="p">:</span>
+        <span class="p p-Indicator">-</span> <span class="nt">source</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">stations</span>
+          <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">stations</span>
+          <span class="nt">index</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">id</span>
+        <span class="p p-Indicator">-</span> <span class="nt">source</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">occupancy</span>
+          <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">occupancy</span>
+          <span class="nt">index</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">id</span>
+<span class="nt">targets</span><span class="p">:</span>
+  <span class="p p-Indicator">-</span> <span class="nt">title</span><span class="p">:</span> <span class="s">&quot;Occupancy&quot;</span>
+    <span class="nt">source</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">station_occupancy</span>
+    <span class="nt">views</span><span class="p">:</span>
+      <span class="nt">locations</span><span class="p">:</span>
+        <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hvplot</span>
+        <span class="nt">kind</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">points</span>
+        <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">station_occupancy</span>
+        <span class="nt">x</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">lon</span>
+        <span class="nt">y</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">lat</span>
+        <span class="nt">hover_cols</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">commonName</span><span class="p p-Indicator">]</span>
+        <span class="nt">tiles</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">Wikipedia</span>
+        <span class="nt">geo</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">responsive</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">500</span>
+        <span class="nt">color</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">bikesCount</span>
+        <span class="nt">line_color</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">black</span>
+        <span class="nt">xaxis</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">null</span>
+        <span class="nt">yaxis</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">null</span>
+        <span class="nt">selection_group</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">bikes</span>
+      <span class="nt">table</span><span class="p">:</span>
+        <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">table</span>
+        <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">station_occupancy</span>
+        <span class="nt">width</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">400</span>
+        <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">500</span>
+        <span class="nt">margin</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">0</span><span class="p p-Indicator">,</span> <span class="nv">100</span><span class="p p-Indicator">]</span>
+        <span class="nt">hidden_columns</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">lat</span><span class="p p-Indicator">,</span> <span class="nv">lon</span><span class="p p-Indicator">]</span>
+        <span class="nt">show_index</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">false</span>
+        <span class="nt">transforms</span><span class="p">:</span>
+          <span class="p p-Indicator">-</span> <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">columns</span>
+            <span class="nt">columns</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">commonName</span><span class="p p-Indicator">,</span> <span class="nv">bikesCount</span><span class="p p-Indicator">,</span> <span class="nv">totalDocks</span><span class="p p-Indicator">,</span> <span class="nv">lat</span><span class="p p-Indicator">,</span> <span class="nv">lon</span><span class="p p-Indicator">]</span>
+      <span class="nt">count_hist</span><span class="p">:</span>
+        <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hvplot</span>
+        <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">station_occupancy</span>
+        <span class="nt">kind</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hist</span>
+        <span class="nt">y</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">bikesCount</span>
+        <span class="nt">responsive</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">300</span>
+        <span class="nt">streaming</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">selection_group</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">bikes</span>
+      <span class="nt">total_hist</span><span class="p">:</span>
+        <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hvplot</span>
+        <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">station_occupancy</span>
+        <span class="nt">kind</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hist</span>
+        <span class="nt">y</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">totalDocks</span>
+        <span class="nt">responsive</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">300</span>
+        <span class="nt">streaming</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">selection_group</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">bikes</span>
+    <span class="nt">filters</span><span class="p">:</span>
+      <span class="p p-Indicator">-</span> <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">param</span>
+        <span class="nt">parameter</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">locations.selection_expr</span>
+    <span class="nt">layout</span><span class="p">:</span> <span class="p p-Indicator">[[</span><span class="nv">locations</span><span class="p p-Indicator">,</span> <span class="nv">table</span><span class="p p-Indicator">],</span> <span class="p p-Indicator">[</span><span class="nv">count_hist</span><span class="p p-Indicator">,</span> <span class="nv">total_hist</span><span class="p p-Indicator">]]</span>
+    <span class="nt">sizing_mode</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">stretch_width</span>
+    <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">900</span>
+</pre></div>
+</div>
+</div>
+
+
+              </div>
+              
+              
+              <div class='prev-next-bottom'>
+                
+    <a class='left-prev' id="prev-link" href="nyc_taxi.html" title="previous page">NYC Taxi</a>
+    <a class='right-next' id="next-link" href="../architecture/index.html" title="next page">Architecture</a>
+
+              </div>
+              
+          </main>
+          
+
+      </div>
+    </div>
+    
+  <script src="../_static/js/index.c86189f1ce1b71a67eb6.js"></script>
+
+
+    <footer class="footer mt-5 mt-md-0">
+  <div class="container">
+    
+    <div class="footer-item">
+      <p class="copyright">
+    &copy; Copyright 2020-2021, HoloViz Developers.<br/>
+</p>
+    </div>
+    
+    <div class="footer-item">
+      <p class="sphinx-version">
+Created using <a href="http://sphinx-doc.org/">Sphinx</a> 3.5.4.<br/>
+</p>
+    </div>
+    
+  </div>
+</footer>
+  </body>
+</html>

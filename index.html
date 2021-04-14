@@ -1,0 +1,282 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome to Lumen! &#8212; Lumen 0.4.1 documentation</title>
+    
+  <link href="_static/css/theme.css" rel="stylesheet" />
+  <link href="_static/css/index.ee6fb81b276d6fba8a971ad8e9b95dd9.css" rel="stylesheet" />
+
+    
+  <link rel="stylesheet"
+    href="_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    
+      
+
+    
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="_static/basic.css" type="text/css" />
+    
+  <link rel="preload" as="script" href="_static/js/index.c86189f1ce1b71a67eb6.js">
+
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Dashboard specification" href="dashboard.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="en" />
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="80">
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+    <nav class="navbar navbar-light navbar-expand-lg bg-light fixed-top bd-navbar" id="navbar-main"><div class="container-xl">
+
+  <div id="navbar-start">
+    
+    
+<a class="navbar-brand" href="#">
+<p class="title">Lumen</p>
+</a>
+
+    
+  </div>
+
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbar-collapsible" aria-controls="navbar-collapsible" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+
+  
+  <div id="navbar-collapsible" class="col-lg-9 collapse navbar-collapse">
+    <div id="navbar-center" class="mr-auto">
+      
+      <div class="navbar-center-item">
+        <ul id="navbar-main-elements" class="navbar-nav">
+    <li class="toctree-l1 current active nav-item">
+ <a class="current reference internal nav-link" href="#">
+  Home
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="dashboard.html">
+  Dashboard Specification
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="gallery/index.html">
+  Gallery
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="architecture/index.html">
+  Architecture
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="rest.html">
+  REST Specification
+ </a>
+</li>
+
+    
+</ul>
+      </div>
+      
+    </div>
+
+    <div id="navbar-end">
+      
+      <div class="navbar-end-item">
+        <ul id="navbar-icon-links" class="navbar-nav" aria-label="Icon Links">
+        <li class="nav-item">
+          <a class="nav-link" href="https://github.com/holoviz/lumen" rel="noopener" target="_blank" title="GitHub">
+            <span><i class="fab fa-github-square"></i></span>
+            <label class="sr-only">GitHub</label>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="https://https://discourse.holoviz.org/" rel="noopener" target="_blank" title="Discourse">
+            <span><i class="fab fa-discourse"></i></span>
+            <label class="sr-only">Discourse</label>
+          </a>
+        </li>
+      </ul>
+      </div>
+      
+    </div>
+  </div>
+</div>
+    </nav>
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+            
+            <div class="col-12 col-md-1 col-xl-2 bd-sidebar no-sidebar"></div>
+            
+          
+
+          
+          <div class="d-none d-xl-block col-xl-2 bd-toc">
+            
+              
+              <div class="toc-item">
+                
+<div class="tocsection onthispage pt-5 pb-3">
+    <i class="fas fa-list"></i> On this page
+</div>
+
+<nav id="bd-toc-nav">
+    <ul class="visible nav section-nav flex-column">
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#examples">
+   Examples
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#architecture">
+   Architecture
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#getting-started">
+   Getting started
+  </a>
+ </li>
+</ul>
+
+</nav>
+              </div>
+              
+              <div class="toc-item">
+                
+              </div>
+              
+            
+          </div>
+          
+
+          
+          
+            
+          
+          <main class="col-12 col-md-11 col-xl-8 py-md-5 pl-md-5 pr-md-4 bd-content" role="main">
+              
+              <div>
+                
+  <div class="section" id="welcome-to-lumen">
+<h1>Welcome to Lumen!<a class="headerlink" href="#welcome-to-lumen" title="Permalink to this headline">¶</a></h1>
+<img src="./_static/diagram.png" width="100%">
+<p>The Lumen project provides a framework for visual analytics, which allows users to build data-driven dashboards from a simple yaml specification. The power of Lumen comes from the ability to leverage the powerful data intake, data processing and data visualization libraries available in the PyData ecosystem.</p>
+<ul class="simple">
+<li><p><strong>Data Intake</strong>: A flexible system for declaring data sources with strong integration with <a class="reference external" href="https://intake.readthedocs.io/en/latest/">Intake</a>, allows Lumen to query data from a wide range of sources including many file formats such as CSV or Parquet but also SQL and many others.</p></li>
+<li><p><strong>Data Proccessing</strong>: Internally Lumen stores data as DataFrame objects, allowing users to leverage familiar APIs for filtering and transforming data using <a class="reference external" href="https://pandas.pydata.org/">Pandas</a> while also providing the ability to scale these transformations out to a cluster thanks to <a class="reference external" href="https://dask.org/">Dask</a>.</p></li>
+<li><p><strong>Data Visualization</strong>: Since Lumen is built on <a class="reference external" href="https://panel.holoviz.org">Panel</a> all the most popular plotting libraries and many other components such as powerful datagrids and BI indicators are supported.</p></li>
+</ul>
+<p>The core strengths of Lumen include:</p>
+<ul class="simple">
+<li><p><strong>Flexibility</strong>: The design of Lumen allows flexibly combining data intake, data processing and data visualization into a simple declarative pipeline.</p></li>
+<li><p><strong>Extensibility</strong>: Every part of Lumen is designed to be extended letting you define custom Source, Filter, Transform and View components.</p></li>
+<li><p><strong>Scalability</strong>: Lumen is designed with performance in mind and supports scalable Dask DataFrames out of the box, letting you scale to datasets larger than memory or even scale out to a cluster.</p></li>
+<li><p><strong>Security</strong>: Lumen ships with a wide range of OAuth providers out of the box, making it a breeze to add authentication to your applications.</p></li>
+</ul>
+<div class="section" id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h2>
+   <table>
+     <tr>
+       <td><a href="./gallery/bikes.html"><b>London Bike Points</b><br><img src="./_static/bikes.png" /></a></td>
+       <td><a href="./gallery/nyc_taxi.html"><b>NYC Taxi</b><br><img src="./_static/nyc_taxi.png" /></a></td>
+     </tr>
+     <tr>
+	   <td><a href="./gallery/penguins.html"><b>Palmer Penguins</b><br><img src="./_static/penguins.png" /></a></td>
+       <td><a href="./gallery/precip.html"><b>Precipitation</b><br><img src="./_static/precip.png" /></a></td>
+     <tr>
+   </table>
+</div>
+<div class="section" id="architecture">
+<h2>Architecture<a class="headerlink" href="#architecture" title="Permalink to this headline">¶</a></h2>
+<p>Lumen is organized into a small number of simple object types which can be easily subclassed and extended:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Source</span></code>: A <code class="docutils literal notranslate"><span class="pre">Source</span></code> provides any number of tables along with a JSON schema describing the contents of those tables.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Filter</span></code>: A <code class="docutils literal notranslate"><span class="pre">Filter</span></code> object is given the schema of a field in one of the tables and generates queries which filter the data supplied by a <code class="docutils literal notranslate"><span class="pre">Source</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">View</span></code>: A <code class="docutils literal notranslate"><span class="pre">View</span></code> can query a table from a <code class="docutils literal notranslate"><span class="pre">Source</span></code> and generates a viewable representation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Transform</span></code>: A <code class="docutils literal notranslate"><span class="pre">Transform</span></code> can apply arbitrary transformation to the tables.</p></li>
+</ul>
+</div>
+<div class="section" id="getting-started">
+<h2>Getting started<a class="headerlink" href="#getting-started" title="Permalink to this headline">¶</a></h2>
+<p>Lumen works with Python 3 and above on Linux, Windows, or Mac. The recommended way to install Lumen is using the <a class="reference external" href="https://conda.pydata.org/docs/"><code class="docutils literal notranslate"><span class="pre">conda</span></code></a> command provided by <a class="reference external" href="https://docs.continuum.io/anaconda/install">Anaconda</a> or <a class="reference external" href="https://conda.pydata.org/miniconda.html"><code class="docutils literal notranslate"><span class="pre">Miniconda</span></code></a>:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>conda install -c pyviz lumen
+</pre></div>
+</div>
+<p>or using PyPI:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>pip install lumen
+</pre></div>
+</div>
+<p>Once installed you will be able to start a Lumen server by running:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>lumen serve dashboard.yaml --show
+</pre></div>
+</div>
+<p>This will open a browser serving the application or dashboard declared by your yaml file in a browser window. During development it is very helpful to use the <code class="docutils literal notranslate"><span class="pre">--autoreload</span></code> flag, which will automatically refresh and update the application in your browser window, whenever you make an edit to the dashboard yaml specification. In this way you can quickly iterate on your dashboard.</p>
+<p>Try it out! Click on one of the examples below, copy the yaml specification and launch your first Lumen application.</p>
+<div class="toctree-wrapper compound">
+</div>
+</div>
+</div>
+
+
+              </div>
+              
+              
+              <div class='prev-next-bottom'>
+                
+    <a class='right-next' id="next-link" href="dashboard.html" title="next page">Dashboard specification</a>
+
+              </div>
+              
+          </main>
+          
+
+      </div>
+    </div>
+    
+  <script src="_static/js/index.c86189f1ce1b71a67eb6.js"></script>
+
+
+    <footer class="footer mt-5 mt-md-0">
+  <div class="container">
+    
+    <div class="footer-item">
+      <p class="copyright">
+    &copy; Copyright 2020-2021, HoloViz Developers.<br/>
+</p>
+    </div>
+    
+    <div class="footer-item">
+      <p class="sphinx-version">
+Created using <a href="http://sphinx-doc.org/">Sphinx</a> 3.5.4.<br/>
+</p>
+    </div>
+    
+  </div>
+</footer>
+  </body>
+</html>

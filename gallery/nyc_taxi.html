@@ -1,0 +1,322 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NYC Taxi &#8212; Lumen 0.4.1 documentation</title>
+    
+  <link href="../_static/css/theme.css" rel="stylesheet" />
+  <link href="../_static/css/index.ee6fb81b276d6fba8a971ad8e9b95dd9.css" rel="stylesheet" />
+
+    
+  <link rel="stylesheet"
+    href="../_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    
+      
+
+    
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/basic.css" type="text/css" />
+    
+  <link rel="preload" as="script" href="../_static/js/index.c86189f1ce1b71a67eb6.js">
+
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Transport for London: Bike Point Occupancy" href="bikes.html" />
+    <link rel="prev" title="Penguins" href="penguins.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="en" />
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="80">
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+    <nav class="navbar navbar-light navbar-expand-lg bg-light fixed-top bd-navbar" id="navbar-main"><div class="container-xl">
+
+  <div id="navbar-start">
+    
+    
+<a class="navbar-brand" href="../index.html">
+<p class="title">Lumen</p>
+</a>
+
+    
+  </div>
+
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbar-collapsible" aria-controls="navbar-collapsible" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+
+  
+  <div id="navbar-collapsible" class="col-lg-9 collapse navbar-collapse">
+    <div id="navbar-center" class="mr-auto">
+      
+      <div class="navbar-center-item">
+        <ul id="navbar-main-elements" class="navbar-nav">
+    <li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../index.html">
+  Home
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../dashboard.html">
+  Dashboard Specification
+ </a>
+</li>
+
+<li class="toctree-l1 current active nav-item">
+ <a class="reference internal nav-link" href="index.html">
+  Gallery
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../architecture/index.html">
+  Architecture
+ </a>
+</li>
+
+<li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../rest.html">
+  REST Specification
+ </a>
+</li>
+
+    
+</ul>
+      </div>
+      
+    </div>
+
+    <div id="navbar-end">
+      
+      <div class="navbar-end-item">
+        <ul id="navbar-icon-links" class="navbar-nav" aria-label="Icon Links">
+        <li class="nav-item">
+          <a class="nav-link" href="https://github.com/holoviz/lumen" rel="noopener" target="_blank" title="GitHub">
+            <span><i class="fab fa-github-square"></i></span>
+            <label class="sr-only">GitHub</label>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="https://https://discourse.holoviz.org/" rel="noopener" target="_blank" title="Discourse">
+            <span><i class="fab fa-discourse"></i></span>
+            <label class="sr-only">Discourse</label>
+          </a>
+        </li>
+      </ul>
+      </div>
+      
+    </div>
+  </div>
+</div>
+    </nav>
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+            
+            <!-- Only show if we have sidebars configured, else just a small margin  -->
+            <div class="col-12 col-md-3 bd-sidebar"><form class="bd-search d-flex align-items-center" action="../search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main navigation">
+  <div class="bd-toc-item active">
+    <ul class="current nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="index.html">
+   Gallery
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="precip.html">
+   Precipitation
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="penguins.html">
+   Penguins
+  </a>
+ </li>
+ <li class="toctree-l1 current active">
+  <a class="current reference internal" href="#">
+   NYC Taxi Trips
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="bikes.html">
+   London Bike Points
+  </a>
+ </li>
+</ul>
+
+  </div>
+</nav>
+            </div>
+            
+          
+
+          
+          <div class="d-none d-xl-block col-xl-2 bd-toc">
+            
+              
+              <div class="toc-item">
+                
+
+<nav id="bd-toc-nav">
+    
+</nav>
+              </div>
+              
+              <div class="toc-item">
+                
+              </div>
+              
+            
+          </div>
+          
+
+          
+          
+            
+          
+          <main class="col-12 col-md-9 col-xl-7 py-md-5 pl-md-5 pr-md-4 bd-content" role="main">
+              
+              <div>
+                
+  <div class="section" id="nyc-taxi">
+<h1>NYC Taxi<a class="headerlink" href="#nyc-taxi" title="Permalink to this headline">¶</a></h1>
+<p><img src="../_static/nyc_taxi.png" width="100%"></img></p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">config</span><span class="p">:</span>
+  <span class="nt">title</span><span class="p">:</span> <span class="s">&quot;NYC</span><span class="nv"> </span><span class="s">Taxi</span><span class="nv"> </span><span class="s">Trips&quot;</span>
+<span class="nt">sources</span><span class="p">:</span>
+  <span class="nt">nyc_taxi</span><span class="p">:</span>
+    <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">intake</span>
+    <span class="nt">shared</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+    <span class="nt">catalog</span><span class="p">:</span>
+      <span class="nt">sources</span><span class="p">:</span>
+        <span class="nt">nyc_taxi</span><span class="p">:</span>
+          <span class="nt">description</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">NYC Taxi Trip data</span>
+          <span class="nt">driver</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">parquet</span>
+          <span class="nt">args</span><span class="p">:</span>
+            <span class="nt">urlpath</span><span class="p">:</span> <span class="s">&#39;https://s3.amazonaws.com/datashader-data/nyc_taxi_wide.parq&#39;</span>
+          <span class="nt">cache</span><span class="p">:</span>
+            <span class="p p-Indicator">-</span> <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">file</span>
+              <span class="nt">regex</span><span class="p">:</span> <span class="s">&#39;{{</span><span class="nv"> </span><span class="s">CATALOG_DIR</span><span class="nv"> </span><span class="s">}}/data&#39;</span>
+              <span class="nt">argkey</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">urlpath</span>
+<span class="nt">targets</span><span class="p">:</span>
+  <span class="p p-Indicator">-</span> <span class="nt">title</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">Trip Data</span>
+    <span class="nt">source</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nyc_taxi</span>
+    <span class="nt">views</span><span class="p">:</span>
+      <span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nyc_taxi</span>
+        <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hvplot</span>
+        <span class="nt">kind</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">points</span>
+        <span class="nt">x</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">pickup_x</span>
+        <span class="nt">y</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">pickup_y</span>
+        <span class="nt">tiles</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">Wikipedia</span>
+        <span class="nt">rasterize</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">cnorm</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">eq_hist</span>
+        <span class="nt">responsive</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">500</span>
+        <span class="nt">colorbar</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">false</span>
+        <span class="nt">selection_group</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">taxi</span>
+        <span class="nt">xaxis</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">null</span>
+        <span class="nt">yaxis</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">null</span>
+      <span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nyc_taxi</span>
+        <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hvplot</span>
+        <span class="nt">kind</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">points</span>
+        <span class="nt">x</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">dropoff_x</span>
+        <span class="nt">y</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">dropoff_y</span>
+        <span class="nt">tiles</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">Wikipedia</span>
+        <span class="nt">rasterize</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">cnorm</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">eq_hist</span>
+        <span class="nt">responsive</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">500</span>
+        <span class="nt">colorbar</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">false</span>
+        <span class="nt">selection_group</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">taxi</span>
+        <span class="nt">xaxis</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">null</span>
+        <span class="nt">yaxis</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">null</span>
+      <span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nyc_taxi</span>
+        <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hvplot</span>
+        <span class="nt">kind</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hist</span>
+        <span class="nt">y</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">trip_distance</span>
+        <span class="nt">bin_range</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">0</span><span class="p p-Indicator">,</span> <span class="nv">20</span><span class="p p-Indicator">]</span>
+        <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">300</span>
+        <span class="nt">responsive</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">selection_group</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">taxi</span>
+      <span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nyc_taxi</span>
+        <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hvplot</span>
+        <span class="nt">kind</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hist</span>
+        <span class="nt">y</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">tip_amount</span>
+        <span class="nt">bin_range</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">0</span><span class="p p-Indicator">,</span> <span class="nv">20</span><span class="p p-Indicator">]</span>
+        <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">300</span>
+        <span class="nt">responsive</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">selection_group</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">taxi</span>
+      <span class="p p-Indicator">-</span> <span class="nt">table</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">nyc_taxi</span>
+        <span class="nt">type</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hvplot</span>
+        <span class="nt">kind</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">hist</span>
+        <span class="nt">y</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">fare_amount</span>
+        <span class="nt">bin_range</span><span class="p">:</span> <span class="p p-Indicator">[</span><span class="nv">0</span><span class="p p-Indicator">,</span> <span class="nv">50</span><span class="p p-Indicator">]</span>
+        <span class="nt">height</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">300</span>
+        <span class="nt">responsive</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">true</span>
+        <span class="nt">selection_group</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">taxi</span>
+    <span class="nt">sizing_mode</span><span class="p">:</span> <span class="l l-Scalar l-Scalar-Plain">stretch_both</span>
+    <span class="nt">layout</span><span class="p">:</span> <span class="p p-Indicator">[[</span><span class="nv">0</span><span class="p p-Indicator">,</span> <span class="nv">1</span><span class="p p-Indicator">],</span> <span class="p p-Indicator">[</span><span class="nv">2</span><span class="p p-Indicator">,</span> <span class="nv">3</span><span class="p p-Indicator">,</span> <span class="nv">4</span><span class="p p-Indicator">]]</span>
+</pre></div>
+</div>
+</div>
+
+
+              </div>
+              
+              
+              <div class='prev-next-bottom'>
+                
+    <a class='left-prev' id="prev-link" href="penguins.html" title="previous page">Penguins</a>
+    <a class='right-next' id="next-link" href="bikes.html" title="next page">Transport for London: Bike Point Occupancy</a>
+
+              </div>
+              
+          </main>
+          
+
+      </div>
+    </div>
+    
+  <script src="../_static/js/index.c86189f1ce1b71a67eb6.js"></script>
+
+
+    <footer class="footer mt-5 mt-md-0">
+  <div class="container">
+    
+    <div class="footer-item">
+      <p class="copyright">
+    &copy; Copyright 2020-2021, HoloViz Developers.<br/>
+</p>
+    </div>
+    
+    <div class="footer-item">
+      <p class="sphinx-version">
+Created using <a href="http://sphinx-doc.org/">Sphinx</a> 3.5.4.<br/>
+</p>
+    </div>
+    
+  </div>
+</footer>
+  </body>
+</html>
