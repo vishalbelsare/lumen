@@ -1,6 +1,6 @@
 import os
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 ########## autover ##########
 
@@ -15,11 +15,15 @@ def get_setup_version(reponame):
 ########## dependencies ##########
 
 dependencies = [
+    "numpy",
+    "bokeh",
     "param",
     "panel >=0.11",
     "pandas",
     "hvplot",
-    "holoviews >=1.14"
+    "holoviews >=1.14",
+    "packaging",
+    "intake",
 ]
 
 extras_require = {
@@ -27,18 +31,22 @@ extras_require = {
         'pytest',
         'flake8',
         'intake',
+        'intake-sql',
+        'fastparquet',
         'msgpack-python',
         'toolz',
-        'twine',
-        'rfc3986',
-        'keyring'
+        'pytest-cov',
+        'codecov',
+        'pre-commit',
     ],
     'doc': [
         'sphinx',
-        'pydata-sphinx-theme',
+        'pydata-sphinx-theme <=0.10',
         'myst-parser',
-        'nbsite',
-        'docutils <0.17'
+        'myst-nb <0.14',
+        'nbsite >=0.7.2rc8',
+        'sphinx-design',
+        'sphinx-copybutton',
     ]
 }
 
@@ -73,6 +81,7 @@ setup_args = dict(
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
         "Operating System :: OS Independent",
         "Intended Audience :: Science/Research",
         "Intended Audience :: Developers",

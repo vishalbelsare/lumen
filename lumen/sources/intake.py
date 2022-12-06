@@ -2,57 +2,68 @@ import intake
 import param
 
 from ..util import get_dataframe_schema
-from .base import Source, cached
+from .base import Source, cached, cached_schema
 
 
 class IntakeBaseSource(Source):
+
+    cache_per_query = param.Boolean(default=False, doc="""
+        Whether to query the whole dataset or individual queries.""")
 
     load_schema = param.Boolean(default=True, doc="""
         Whether to load the schema""")
 
     __abstract = True
 
-    def _read(self, table, dask=True):
+    def _read(self, entry, dask=True):
+        if self.dask or dask:
+            try:
+                return entry.to_dask()
+            except Exception:
+                if self.dask:
+                    self.param.warning(
+                        f"Could not load {entry.name!r} table with dask."
+                    )
+        return entry.read()
+
+    def get_tables(self):
+        return list(self.cat)
+
+    @cached_schema
+    def get_schema(self, table=None):
+        schemas = {}
+        for entry in list(self.cat):
+            if table is not None and entry != table:
+                continue
+            elif not self.load_schema:
+                schemas[entry] = {}
+                continue
+            data = self.get(entry, __dask=True)
+            schemas[entry] = get_dataframe_schema(data)['items']['properties']
+        return schemas if table is None else schemas[table]
+
+    @cached
+    def get(self, table, **query):
+        dask = query.pop('__dask', self.dask)
         try:
             entry = self.cat[table]
         except KeyError:
             raise KeyError(f"'{table}' table could not be found in Intake "
                            "catalog. Available tables include: "
                            f"{list(self.cat)}.")
-        if self.dask or dask:
-            try:
-                return entry.to_dask()
-            except Exception:
-                if self.dask:
-                    self.param.warning(f"Could not load {table} table with dask.")
-                pass
-        return entry.read()
-
-    def get_tables(self):
-        return list(self.cat)
-
-    def get_schema(self, table=None):
-        schemas = {}
-        for entry in list(self.cat):
-            if table is not None and entry != table:
-                continue
-            data = self.get(entry, __dask=True)
-            if self.load_schema:
-                schemas[entry] = get_dataframe_schema(data)['items']['properties']
-            else:
-                schemas[entry] = {}
-        return schemas if table is None else schemas[table]
-
-    @cached(with_query=False)
-    def get(self, table, **query):
-        dask = query.pop('__dask', self.dask)
-        df = self._read(table)
+        df = self._read(entry, dask)
         return df if dask or not hasattr(df, 'compute') else df.compute()
 
 
 class IntakeSource(IntakeBaseSource):
     """
-    An IntakeSource loads data from an Intake catalog.
+    An `IntakeSource` loads data from an Intake catalog.
+
+    Intake is a lightweight set of tools for loading and sharing data
+    in data science projects using convenient catalog specifications.
+
+    The `IntakeSource` can be given a dictionary `catalog` specification
+    OR a URI pointing to a catalog.yaml file on disk.
     """
 
     catalog = param.Dict(doc="An inlined Catalog specification.")
@@ -67,8 +78,9 @@ class IntakeSource(IntakeBaseSource):
     def __init__(self, **params):
         super().__init__(**params)
         if self.uri and self.catalog:
-            raise ValueError("Either specify a Catalog uri or an "
-                             "inlined catalog, not both.")
+            raise ValueError(
+                "Either specify a Catalog uri or an inlined catalog, not both."
+            )
         elif self.uri:
             self.cat = intake.open_catalog(self.uri)
         elif self.catalog:
@@ -83,29 +95,3 @@ class IntakeSource(IntakeBaseSource):
             entries = {entry.name: entry for entry in cfg.pop('data_sources')}
             self.cat = intake.catalog.Catalog(**cfg)
             self.cat._entries = entries
-
-
-class IntakeDremioSource(IntakeBaseSource):
-
-    cert = param.String(default="Path to certificate file")
-
-    dask = param.Boolean(default=False, doc="""
-        Whether to return a dask DataFrame.""")
-
-    uri = param.String(doc="URI of the catalog file.")
-
-    tls = param.Boolean(default=False, doc="Enable encryption")
-
-    username = param.String(default=None, doc="Dremio username")
-
-    password = param.String(default=None, doc="Dremio password or token")
-
-    source_type = 'intake_dremio'
-
-    def __init__(self, **params):
-        from intake_dremio.dremio_cat import DremioCatalog
-        super().__init__(**params)
-        self.cat = DremioCatalog(
-            self.uri, cert=self.cert, tls=self.tls, username=self.username,
-            password=self.password
-        )

@@ -1,16 +1,34 @@
 import importlib
 import os
 import sys
+import weakref
 
-import param as param
 import panel as pn
+import param as param
 
-from panel.widgets.indicators import Indicator
+from panel.template import DarkTheme, DefaultTheme
 from panel.template.base import BasicTemplate
-from panel.template import DefaultTheme, DarkTheme
+from panel.widgets.indicators import Indicator
+
+from .validation import ValidationError, match_suggestion_message
+
+
+class ConfigDict(dict):
+    def __init__(self, name, **kwargs):
+        self.name = name
+        super().__init__(**kwargs)
+
+    def __getitem__(self, key):
+        try:
+            return super().__getitem__(key)
+        except KeyError as e:
+            msg = f"{self.name} with name '{key}' was not found."
+            msg = match_suggestion_message(key, list(self), msg)
+            raise ValidationError(msg) from e
 
 
 _INDICATORS = {k.lower(): v for k, v in param.concrete_descendents(Indicator).items()}
+_INDICATORS = ConfigDict("Indicator", **_INDICATORS)
 
 _LAYOUTS = {
     'accordion': pn.Accordion,
@@ -25,12 +43,16 @@ try:
 except Exception:
     _DEFAULT_LAYOUT = pn.GridBox
 
+_LAYOUTS = ConfigDict("Layout", **_LAYOUTS)
+
+
 _TEMPLATES = {
     k[:-8].lower(): v for k, v in param.concrete_descendents(BasicTemplate).items()
 }
+_TEMPLATES = ConfigDict("Template", **_TEMPLATES)
 
 _THEMES = {'default': DefaultTheme, 'dark': DarkTheme}
-
+_THEMES = ConfigDict("Theme", **_THEMES)
 
 
 class _config(param.Parameterized):
@@ -53,11 +75,28 @@ class _config(param.Parameterized):
 
     _modules = {}
 
+    _session_config = weakref.WeakKeyDictionary()
+
     @property
     def root(self):
+        if pn.state.curdoc and pn.state.curdoc in self._session_config:
+            session_config = self._session_config[pn.state.curdoc]
+            if 'root' in session_config:
+                return session_config['root']
         if self._root:
             return self._root
         return os.getcwd()
+
+    @root.setter
+    def root(self, root):
+        if pn.state.curdoc:
+            if pn.state.curdoc in self._session_config:
+                session_config = self._session_config[pn.state.curdoc]
+            else:
+                self._session_config[pn.state.curdoc] = session_config = {}
+            session_config['root'] = root
+        else:
+            self._root = root
 
     def load_local_modules(self):
         """
@@ -89,8 +128,6 @@ class _config(param.Parameterized):
     @dev.setter
     def dev(self, dev):
         self._dev = dev
-
-
 
 
 config = _config()

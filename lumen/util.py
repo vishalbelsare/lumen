@@ -1,14 +1,25 @@
+from __future__ import annotations
+
 import datetime as dt
 import importlib
-import re
 import os
+import re
 import sys
-import subprocess
 
-from jinja2 import Environment, Undefined, DebugUndefined
+from functools import wraps
+from logging import getLogger
+from subprocess import check_output
+
+import pandas as pd
+import panel as pn
+
+from jinja2 import DebugUndefined, Environment, Undefined
 from pandas.core.dtypes.dtypes import CategoricalDtype
 from panel import state
 
+log = getLogger(__name__)
+
+VARIABLE_RE = re.compile(r'\$variables\.([a-zA-Z_]\w*)')
 
 def get_dataframe_schema(df, columns=None):
     """
@@ -32,22 +43,31 @@ def get_dataframe_schema(df, columns=None):
     else:
         is_dask = False
 
+    schema = {'type': 'array', 'items': {'type': 'object', 'properties': {}}}
+    if df is None:
+        return schema
+
     if columns is None:
         columns = list(df.columns)
 
-    schema = {'type': 'array', 'items': {'type': 'object', 'properties': {}}}
     properties = schema['items']['properties']
     for name in columns:
         dtype = df.dtypes[name]
         column = df[name]
         if dtype.kind in 'uifM':
-            vmin, vmax = column.min(), column.max()
-            if is_dask:
-                vmin, vmax = dd.compute(vmin, vmax)
+            if df.empty:
+                if dtype.kind == 'M':
+                    vmin, vmax = pd.NaT, pd.NaT
+                else:
+                    vmin, vmax = float('NaN'), float('NaN')
+            else:
+                vmin, vmax = column.min(), column.max()
+                if is_dask:
+                    vmin, vmax = dd.compute(vmin, vmax)
             if dtype.kind == 'M':
                 kind = 'string'
                 vmin, vmax = vmin.isoformat(), vmax.isoformat()
-            else:
+            elif not df.empty:
                 if dtype.kind == 'f':
                     cast = float
                     kind = 'number'
@@ -67,6 +87,8 @@ def get_dataframe_schema(df, columns=None):
         elif dtype.kind == 'O':
             if isinstance(dtype, CategoricalDtype) and len(dtype.categories):
                 cats = list(dtype.categories)
+            elif df.empty:
+                cats = []
             else:
                 try:
                     cats = column.unique()
@@ -102,7 +124,7 @@ def _j_getshell(x):
     if isinstance(x, Undefined):
         x = x._undefined_name
     try:
-        return subprocess.check_output(x).decode()
+        return check_output(x, shell=True).decode()
     except (IOError, OSError):
         return ""
 
@@ -204,5 +226,85 @@ def resolve_module_reference(reference, component_type):
     component = getattr(module, ctype)
     if not issubclass(component, component_type):
         raise ValueError(f"{cls_name} type '{reference}' did not resolve "
-                         "to a {cls_name} subclass.")
+                         f"to a {cls_name} subclass.")
     return component
+
+def is_ref(value):
+    """
+    Whether the value is a reference.
+    """
+    if not isinstance(value, str):
+        return False
+    return bool(VARIABLE_RE.findall(value)) or value.startswith('$')
+
+def extract_refs(spec, ref_type=None):
+    refs = []
+    if isinstance(spec, dict):
+        for k, v in spec.items():
+            for ref in extract_refs(v, ref_type):
+                if ref not in refs:
+                    refs.append(ref)
+    elif isinstance(spec, list):
+        for v in spec:
+            for ref in extract_refs(v, ref_type):
+                if ref not in refs:
+                    refs.append(ref)
+    elif is_ref(spec):
+        refs.append(spec)
+    if ref_type is None:
+        return refs
+    filtered = [ref for ref in refs if f'${ref_type}' in ref[1:]]
+    return filtered
+
+def cleanup_expr(expr):
+    ref_vars = VARIABLE_RE.findall(expr)
+    for var in ref_vars:
+        re_var = r'\$variables\.' + var
+        expr = re.sub(re_var, var, expr)
+    return expr
+
+def catch_and_notify(message=None):
+    """Catch exception and notify user
+
+    A decorator which catches all the exception of a function.
+    When an error occurs a panel notification will be send to the
+    dashboard with the message and logged the error and which method
+    it arrived from.
+
+    Parameters
+    ----------
+    message : str | None
+        The notification message, by default None.
+        None will give this "Error: {e}" where e is the
+        exception message.
+
+    """
+    # This is to be able to call the decorator
+    # like this @catch_and_notify
+    function = None
+    if callable(message):
+        function = message
+        message = None
+
+    if message is None:
+        message = "Error: {e}"
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if pn.config.notifications:
+                    log.error(
+                        f"{func.__qualname__!r} raised {type(e).__name__}: {e}"
+                    )
+                    pn.state.notifications.error(message.format(e=e))
+                else:
+                    raise e
+        return wrapper
+
+    if function:
+        return decorator(function)
+
+    return decorator

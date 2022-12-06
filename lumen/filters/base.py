@@ -2,20 +2,26 @@
 The Filter components supply query parameters used to filter the
 tables returned by a Source.
 """
+import types
 
+import bokeh
 import pandas as pd
 import panel as pn
 import param
 
+from packaging.version import Version
+from panel.util import classproperty
+
+from ..base import MultiTypeComponent
 from ..schema import JSONSchema
 from ..state import state
 from ..util import resolve_module_reference
+from ..validation import ValidationError
 
 
-class Filter(param.Parameterized):
+class Filter(MultiTypeComponent):
     """
-    A Filter provides a query which will be used to filter the data
-    returned by a Source.
+    `Filter` components supply the filter values used by `Source` components to query data. .
     """
 
     field = param.String(doc="The field being filtered.")
@@ -27,7 +33,7 @@ class Filter(param.Parameterized):
         about the data to be filtered.""")
 
     shared = param.Boolean(default=False, doc="""
-        Whether the filter is shared across all targets.""")
+        Whether the filter is shared across all layouts.""")
 
     sync_with_url = param.Boolean(default=True, doc="""
         Whether to sync the filter state with the URL parameters.""")
@@ -39,32 +45,29 @@ class Filter(param.Parameterized):
 
     filter_type = None
 
-    _requires_field = True
-
     __abstract = True
+
+    # Specification configuration
+    _internal_params = ['name', 'schema']
+    _requires_field = True
 
     def __init__(self, **params):
         super().__init__(**params)
-        if state.app and state.app.config.sync_with_url and self.sync_with_url and pn.state.location:
+        if state.config and state.config.sync_with_url and self.sync_with_url and pn.state.location:
             pn.state.location.sync(self, {'value': self.field}, on_error=self._url_sync_error)
+
+    @classproperty
+    def _required_keys(cls):
+        return ['field'] if cls._requires_field else []
 
     def _url_sync_error(self, values):
         """
         Called when URL syncing errors.
         """
 
-    @classmethod
-    def _get_type(cls, filter_type):
-        if '.' in filter_type:
-            return resolve_module_reference(filter_type, Filter)
-        try:
-            __import__(f'lumen.filters.{filter_type}')
-        except Exception:
-            pass
-        for filt in param.concrete_descendents(cls).values():
-            if filt.filter_type == filter_type:
-                return filt
-        raise ValueError(f"No Filter for filter_type '{filter_type}' could be found.")
+    ##################################################################
+    # Public API
+    ##################################################################
 
     @classmethod
     def from_spec(cls, spec, source_schema, source_filters=None):
@@ -95,7 +98,7 @@ class Filter(param.Parameterized):
                                  f"available filters on the source include {list(source_filters)}.")
             return source_filters[spec]
         spec = dict(spec)
-        filter_type = Filter._get_type(spec.pop('type'))
+        filter_type = Filter._get_type(spec.pop('type', None))
         if not filter_type._requires_field:
             return filter_type(**spec)
         elif not 'field' in spec:
@@ -105,16 +108,26 @@ class Filter(param.Parameterized):
             spec['label'] = field.title()
         table = spec.get('table')
         schema = None
+        fields = []
         for key, table_schema in source_schema.items():
             if table is not None and key != table:
                 continue
             schema = table_schema.get(field)
+            fields.extend(list(table_schema))
             if schema is not None:
                 break
         if not schema:
-            raise ValueError("Source did not declare a schema for "
-                             f"'{field}' filter.")
+            raise ValueError(
+                f"Source did not declare a schema for {field!r} filter. "
+                f"Available fields include: {fields!r}."
+            )
         return filter_type(schema={field: schema}, **spec)
+
+    def to_spec(self, context=None):
+        spec = super().to_spec(context=context)
+        if spec.get('label', '').lower() == spec.get('field'):
+            del spec['label']
+        return spec
 
     @property
     def panel(self):
@@ -136,6 +149,12 @@ class Filter(param.Parameterized):
             Source to filter the data.
         """
 
+    @classmethod
+    def validate(cls, spec, context=None):
+        if isinstance(spec, str):
+            return spec
+        return super().validate(spec, context)
+
 
 class ConstantFilter(Filter):
     """
@@ -147,7 +166,11 @@ class ConstantFilter(Filter):
 
     @property
     def query(self):
-        return self.value
+        query = self.value
+        field_type = (self.schema or {}).get(self.field, {}).get('type', None)
+        if field_type == 'number' and isinstance(query, list) and len(query) == 2:
+            return tuple(query)
+        return query
 
     @property
     def panel(self):
@@ -185,14 +208,19 @@ class BaseWidgetFilter(Filter):
 
     default = param.Parameter(doc="""
         The default value to use on the widget.""")
-    
+
     disabled = param.Boolean(default=False, doc="""
         Whether the filter should be disabled.""")
+
+    throttled = param.Boolean(default=True, doc="""
+       If the widget has a value_throttled parameter use that instead,
+       ensuring that no intermediate events are generated, e.g. when
+       dragging a slider.""")
 
     visible = param.Boolean(default=True, doc="""
         Whether the filter should be visible.""")
 
-    __abstract__ = True
+    __abstract = True
 
     def _url_sync_error(self, values):
         value = values['value']
@@ -206,16 +234,22 @@ class BaseWidgetFilter(Filter):
     @property
     def panel(self):
         widget = self.widget.clone()
-        self.widget.link(widget, value='value', visible='visible', disabled='disabled', bidirectional=True)
+        if self.throttled and 'value_throttled' in self.widget.param:
+            widget.link(self.widget, value_throttled='value')
+            self.widget.link(widget, value='value')
+            self.widget.link(widget, visible='visible', disabled='disabled', bidirectional=True)
+        else:
+            self.widget.link(widget, value='value', visible='visible', disabled='disabled', bidirectional=True)
         return widget
 
 
 
 class WidgetFilter(BaseWidgetFilter):
     """
-    The WidgetFilter generates a Widget from the table schema provided
-    by a Source and returns the current widget value to query the data
-    returned by the Source.
+    `WidgetFilter` generates a Widget from the table schema provided by a Source.
+
+    By default the widget type will be inferred from the data and
+    depending on whether `multi` value selection is enabled.
     """
 
     empty_select = param.Boolean(default=True, doc="""
@@ -226,24 +260,53 @@ class WidgetFilter(BaseWidgetFilter):
         e.g. for a numeric value this could be a regular slider or a
         range slider.""")
 
-    widget = param.ClassSelector(class_=pn.widgets.Widget)
+    widget = param.ClassSelector(class_=pn.widgets.Widget, doc="""
+        The widget instance. When declared in a specification a full
+        module path to a Panel widget class can be provided to override
+        the default inferred widget.""")
 
     filter_type = 'widget'
 
+    _internal_params = ['name', 'schema']
+
     def __init__(self, **params):
+        wtype = params.pop('widget', None)
+        self._inferred_widget = wtype is None
         super().__init__(**params)
         self.widget = JSONSchema(
-            schema=self.schema, sizing_mode='stretch_width', multi=self.multi
+            schema=self.schema, sizing_mode='stretch_width', multi=self.multi,
+            widgets={self.field: wtype} if wtype else {}
         )._widgets[self.field]
         if isinstance(self.widget, pn.widgets.Select) and self.empty_select:
-            self.widget.options.insert(0, ' ')
+            if self.widget.options[0] != ' ':
+                self.widget.options.insert(0, ' ')
             self.widget.value = ' '
         self.widget.name = self.label
         self.widget.visible = self.visible
         self.widget.disabled = self.disabled
-        self.widget.link(self, value='value', visible='visible', disabled='disabled', bidirectional=True)
+        self.widget.link(self, bidirectional=True, value='value', visible='visible', disabled='disabled')
         if self.default is not None:
             self.widget.value = self.default
+
+    @classmethod
+    def _validate_widget(cls, widget, spec, context):
+        try:
+            resolve_module_reference(widget, pn.widgets.Widget)
+        except Exception:
+            raise ValidationError(
+                f'{cls.__name__} could not resolve widget module reference {widget!r}.', spec
+            )
+        else:
+            return widget
+
+    def to_spec(self, context=None):
+        spec = super().to_spec(context=context)
+        if self._inferred_widget:
+            del spec['widget']
+        else:
+            wtype = type(spec['widget'])
+            spec['widget'] = f'{wtype.__module__}.{wtype.__name__}'
+        return spec
 
     @property
     def query(self):
@@ -260,8 +323,11 @@ class WidgetFilter(BaseWidgetFilter):
 
 class BinFilter(BaseWidgetFilter):
     """
-    The BinFilter allows declaring a set of bins as a list of tuples
-    and an optional set of labels of the same length.
+    `BinFilter` is a special `WidgetFilter` that allows selecting from a set of bins.
+
+    The `bins` must be declared from a list of tuples declaring the
+    lower- and upper-bound of each bin and an optional set of `labels`
+    of the same length.
     """
 
     bins = param.List(default=[], constant=True, doc="""
@@ -301,30 +367,51 @@ class BinFilter(BaseWidgetFilter):
         return self.widget.value
 
 
-class DateFilter(BaseWidgetFilter):
+class BaseDateFilter(BaseWidgetFilter):
 
     mode = param.Selector(default='slider', objects=['slider', 'picker'], doc="""
         Whether to use a slider or a picker.""")
 
+    multi = param.Boolean(default=True, doc="""
+        Whether to use a single-value or multi-value/range selection widget.""")
+
     throttled = param.Boolean(default=True, doc="""
         Whether to throttle slider value changes.""")
 
-    filter_type = 'date'
+    _as_date = False
+
+    # Mapping from mode to a Panel widget, or to a function
+    # that must return a tuple of a Panel widget and a dictionnary
+    # of parameter values that will override the current ones.
+    _widget_mode_mapping = {}
+
+    __abstract = True
 
     def __init__(self, **params):
         super().__init__(**params)
-        if self.mode == 'slider':
-            widget = pn.widgets.DateRangeSlider
-        else:
-            widget = pn.widget.DatePicker
+        widget_type = self._widget_mode_mapping[self.mode]
+        param_overrides = {}
+        if isinstance(widget_type, types.FunctionType):
+            widget_type, param_overrides = widget_type(self)
+        if param_overrides:
+            self.param.set_param(**param_overrides)
+        self.widget = widget_type(**self._widget_kwargs(as_date=self._as_date))
+        self.widget.link(self, value='value', visible='visible', disabled='disabled', bidirectional=True)
+
+    def _widget_kwargs(self, as_date):
         field_schema = self.schema.get(self.field, {})
-        start = pd.to_datetime(field_schema.get('inclusiveMinimum', None))
-        end = pd.to_datetime(field_schema.get('inclusiveMaximum', None))
-        kwargs = {'name': self.label, 'start': start, 'end': end}
+        kwargs = {
+            'name': self.label,
+            'start': pd.to_datetime(field_schema.get('inclusiveMinimum', None)),
+            'end': pd.to_datetime(field_schema.get('inclusiveMaximum', None)),
+        }
         if self.default is not None:
             kwargs['value'] = pd.to_datetime(self.default)
-        self.widget = widget(**kwargs)
-        self.widget.link(self, value='value')
+        if as_date:
+            for key in ['value', 'start', 'end']:
+                if key in kwargs and kwargs[key] is not None:
+                    kwargs[key] = kwargs[key].date()
+        return kwargs
 
     @property
     def panel(self):
@@ -333,7 +420,7 @@ class DateFilter(BaseWidgetFilter):
             self.widget.link(widget, value='value')
             widget.link(self.widget, value_throttled='value')
         else:
-            self.widget.link(widget, value='value', bidirectional=True)
+            self.widget.link(widget, value='value', visible='visible', disabled='disabled', bidirectional=True)
         return widget
 
     @property
@@ -341,7 +428,121 @@ class DateFilter(BaseWidgetFilter):
         return self.widget.value
 
 
+# DateFilter and DatetimeFilter both implement __new__ to return
+# a Parameterized class that has the correct `value` Parameter type,
+# which depends on the filter type (calendar date vs. datetime) and mode
+# (slider vs picker).
+
+class DateFilter(BaseDateFilter):
+    """
+    `DateFilter` is a `WidgetFilter` specialized to select calendar dates.
+
+    Depending on whether `multi` selection is enabled a single date or
+    range of dates can be selected with a `DatePicker` or
+    `DateRangeSlider` respectively.
+    """
+
+    filter_type = 'date'
+
+    def __new__(cls, **params):
+        if params.get('multi', cls.param.multi.default):
+            return _MultiCalendarDateFilter(**params)
+        else:
+            return _SingleCalendarDateFilter(**params)
+
+
+class _SingleCalendarDateFilter(BaseDateFilter):
+
+    _as_date = True
+
+    _widget_mode_mapping = {
+        'slider': pn.widgets.DateSlider,
+        'picker': pn.widgets.DatePicker,
+    }
+
+    value = param.CalendarDate()
+
+
+class _MultiCalendarDateFilter(BaseDateFilter):
+
+    _as_date = True
+
+    _widget_mode_mapping = {
+        'slider': pn.widgets.DateRangeSlider,
+        #'picker': pn.widgets.DateRangePicker,
+    }
+
+    value = param.CalendarDateRange()
+
+
+class DatetimeFilter(BaseDateFilter):
+    """
+    `DatetimeFilter` is a `WidgetFilter` specialized to filter by datetimes.
+
+    Depending on whether `multi` selection is enabled a single date or
+    range of dates can be selected with a `DatetimePicker` or
+    `DatetimeRangeSlider` respectively.
+    """
+
+    filter_type = 'datetime'
+
+    def __new__(cls, **params):
+        if params.get('multi', cls.param.multi.default):
+            return _MultiDatetimeFilter(**params)
+        else:
+            return _SingleDatetimeFilter(**params)
+
+
+def _fallback_to_datetimepicker(inst):
+    inst.param.warning(
+        'Datetime multi/range slider filter not yet available, '
+        'fallback to using a picker filter.'
+    )
+    return pn.widgets.DatetimePicker, {'mode': 'picker'}
+
+
+class _SingleDatetimeFilter(BaseDateFilter):
+
+    _as_date = False
+
+    _widget_mode_mapping = {
+        'slider': _fallback_to_datetimepicker,
+        'picker': pn.widgets.DatetimePicker,
+    }
+
+    value = param.Date()
+
+
+def _handle_datetimerangeslider(inst):
+    if Version(bokeh.__version__) <= Version('2.4.3'):
+        inst.param.warning(
+            'Datetime multi/range slider filter requires Bokeh >= 2.4.3, '
+            'fallback to using a picker filter.'
+        )
+        return pn.widgets.DatetimeRangePicker, {'mode': 'picker'}
+    else:
+        return pn.widgets.DatetimeRangeSlider, {}
+
+
+class _MultiDatetimeFilter(BaseDateFilter):
+
+    _as_date = False
+
+    _widget_mode_mapping = {
+        'slider': _handle_datetimerangeslider,
+        'picker': pn.widgets.DatetimeRangePicker,
+    }
+
+    value = param.DateRange()
+
+
 class ParamFilter(Filter):
+    """
+    `ParamFilter` reflects the value of a parameter declared on a `View`.
+
+    The `ParamFilter` can be used to implement cross-filtering between
+    different views.
+    """
 
     parameter = param.ClassSelector(default=None, class_=(param.Parameter, str), doc="""
         Reference to a Parameter on an existing View.""")
@@ -361,3 +562,6 @@ class ParamFilter(Filter):
     def _attach_watcher(self, *args):
         if isinstance(self.parameter, param.Parameter):
             self.parameter.owner.param.watch(self._update_value, self.parameter.name)
+
+
+__all__ = [name for name, obj in locals().items() if isinstance(obj, type) and issubclass(obj, Filter)]

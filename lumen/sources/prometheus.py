@@ -9,18 +9,24 @@ import panel as pn
 import param
 import requests
 
-from .base import Source, cached
 from ..util import parse_timedelta
+from .base import Source, cached
 
 
 class PrometheusSource(Source):
     """
-    Queries a Prometheus PromQL endpoint for timeseries information
-    about Kubernetes pods.
+    `PrometheusSource` allows querying Prometheus PromQL endpoints.
+
+    The `PrometheusSource` is configured to return timeseries about CPU,
+    memory and network usage as well as restarts for a list of
+    Kubernetes pods specified by ID.
     """
 
     ae5_source = param.Parameter(doc="""
       An AE5Source instance to use for querying.""")
+
+    cache_per_query = param.Boolean(default=False, doc="""
+        Whether to query the whole dataset or individual queries.""")
 
     ids = param.List(default=[], doc="""
       List of pod IDs to query.""")
@@ -230,7 +236,7 @@ class PrometheusSource(Source):
             schema[k] = mdef['schema']
         return {"timeseries": schema} if table is None else schema
 
-    @cached(with_query=False)
+    @cached
     def get(self, table, **query):
         if table not in ('timeseries',):
             raise ValueError(f"PrometheusSource has no '{table}' table, "

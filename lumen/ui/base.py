@@ -4,7 +4,6 @@ import param
 from panel.reactive import ReactiveHTML
 
 from .fast import FastDivider
-from .state import state
 
 
 class Wizard(ReactiveHTML):
@@ -20,12 +19,18 @@ class Wizard(ReactiveHTML):
     spec = param.Dict(precedence=-1)
 
     _template = """
-    <div id="wizard" style="width: 100%; height: 100%;">${current}</div>
-    <fast-divider style="margin: 1em 0;"></fast-divider>
-    <fast-flipper id="previous" onclick="${_previous}" style="float: left" direction="previous" disabled=${previous_disable}>
-    </fast-flipper>
-    <fast-flipper id="next" onclick="${_next}" style="float: right" disabled=${next_disable}>
-    </fast-flipper>
+    <div id="wizard-content" style="display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+    <div id="wizard" style="overflow: clip auto; padding-right: 1em; height: 100%;">${current}</div>
+    <div id="wizard-footer" style="margin-top: auto;">
+      <fast-divider style="margin: 1em 0;"></fast-divider>
+      <div style="display: flex; flex-direction: row; justify-content: space-between; align-items: center;">
+      <fast-flipper id="previous" onclick="${_previous}" direction="previous" disabled=${previous_disable}>
+      </fast-flipper>
+      <fast-flipper id="next" onclick="${_next}" disabled=${next_disable}>
+      </fast-flipper>
+      </div>
+    </div>
+    </div>
     """
 
     def __init__(self, **params):
@@ -43,11 +48,12 @@ class Wizard(ReactiveHTML):
         ]
 
     def _ready(self, event):
-        self.next_disable = False
+        self.next_disable = not event.obj.ready
         if event.obj.auto_advance:
             self._next()
 
     def open_modal(self):
+        from .state import state
         self.preview.object = dict(state.spec)
         if state.modal.objects == [self.preview]:
             state.template.open_modal()
@@ -90,7 +96,7 @@ class WizardItem(ReactiveHTML):
     active = param.Boolean(default=False)
 
     auto_advance = param.Boolean(default=False)
-    
+
     sizing_mode = param.String(default='stretch_width', readonly=True)
 
     ready = param.Boolean(default=False)
@@ -107,4 +113,3 @@ class WizardItem(ReactiveHTML):
 
     def _update_spec(self, *events):
         pass
-        

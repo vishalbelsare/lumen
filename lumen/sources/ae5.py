@@ -1,21 +1,27 @@
 import datetime as dt
 
+import numpy as np
+import pandas as pd
 import param
 import requests
 
 from ae5_tools.api import AEAdminSession, AEUserSession
 from panel import state
 
-from .base import Source, cached
 from ..util import get_dataframe_schema
+from .base import Source, cached, cached_schema
 
 
 class AE5Source(Source):
     """
-    The AE5Source provides a number of tables, which allow monitoring
-    the nodes, deployments, sessions and resource profiles of an
-    Anaconda Enterprise 5 installation.
+    The AE5Source queries an Anaconda Enterprise 5 instance for statistics.
+
+    Specifically it provides tables with information nodes,
+    deployments, sessions, jobs and resource profiles.
     """
+
+    cache_per_query = param.Boolean(default=False, doc="""
+        Whether to query the whole dataset or individual queries.""")
 
     hostname = param.String(doc="URL of the AE5 host.")
 
@@ -40,14 +46,31 @@ class AE5Source(Source):
 
     _deployment_columns = [
         'id', 'name', 'url', 'owner', 'resource_profile', 'public', 'state',
-        'cpu', 'cpu_percent', 'memory', 'memory_percent', 'uptime', 'restarts'
+        'cpu', 'cpu_percent', 'memory', 'memory_percent', 'uptime', 'restarts',
+        'node'
+    ]
+
+    _job_columns = [
+        'id', 'name', 'owner', 'command', 'revision', 'resource_profile',
+        'created', 'updated', 'state', 'project_id', 'project_name',
+        'goal_state', 'status_text', 'url', 'schedule', 'source',
     ]
 
     _session_columns = [
-        'id', 'name', 'url', 'owner', 'resource_profile', 'state'
+        'id', 'name', 'url', 'owner', 'resource_profile', 'state', 'node',
     ]
 
-    _tables = ['deployments', 'nodes', 'resources', 'sessions']
+    _allocation_columns = [
+        'id', 'name', 'url', 'owner', 'resource_profile', 'state', 'node',
+        'type', 'node/mem', 'node/cpu', 'node/gpu', 'resource/cpu',
+        'resource/mem', 'resource/gpu', 'allocation/mem_pct',
+        'allocation/cpu_pct', 'allocation/gpu_pct'
+    ]
+
+    _tables = [
+        'deployments', 'nodes', 'resources', 'sessions', 'jobs',
+        'resource_allocations'
+    ]
 
     _units = {
         'm': 0.001,
@@ -64,10 +87,23 @@ class AE5Source(Source):
             self.hostname, self.username, self.password, persist=False,
             k8s_endpoint=self.k8s_endpoint
         )
-        if self.admin_username:
+        if self.admin_username and self._user:
             self._admin_session = AEAdminSession(
                 self.hostname, self.admin_username, self.admin_password
             )
+            self._admin_session.authorize()
+            try:
+                # Try making more optimized query
+                user_info = self._admin_session.user_info(self._user, include_login=False)
+            except Exception:
+                user_info = self._admin_session.user_info(self._user)
+            user_id = user_info['id']
+            roles = self._admin_session._get(f'users/{user_id}/role-mappings/realm/composite')
+            self._is_admin = any(role['name'] == 'ae-admin' for role in roles)
+            self._groups = [g['name'] for g in self._admin_session._get(f'users/{user_id}/groups')]
+        else:
+            self._is_admin = False
+            self._groups = []
         adapter = requests.adapters.HTTPAdapter(pool_maxsize=self.pool_size)
         self._session.session.mount('https://', adapter)
         self._session.session.mount('http://', adapter)
@@ -157,22 +193,16 @@ class AE5Source(Source):
         deployments = self._session.deployment_list(
             k8s=True, format='dataframe', collaborators=bool(user)
         ).apply(self._process_deployment, axis=1)
-        if self.admin_username and user is not None:
-            self._admin_session.authorize()
-            user_id = self._admin_session.user_info(user)['id']
-            roles = self._admin_session._get(f'users/{user_id}/role-mappings/realm/composite')
-            is_admin = any(role['name'] == 'ae-admin' for role in roles)
-            groups = [g['name'] for g in self._admin_session._get(f'users/{user_id}/groups')]
-        else:
-            is_admin = False
-            groups = []
-        if user is None or is_admin:
+        if not len(deployments):
+            return pd.DataFrame(columns=self._deployment_columns)
+        if user is None or self._is_admin:
             return deployments[self._deployment_columns]
         return deployments[
             deployments.public |
             (deployments.owner == user) |
             deployments._collaborators.apply(
-                lambda cs: any(c['id'] in groups if c['type'] == 'group' else c['id'] == user for c in cs)
+                lambda cs: any(c['id'] in self._groups if c['type'] == 'group' else c['id'] == user
+                               for c in cs)
             )
         ][self._deployment_columns]
 
@@ -184,17 +214,82 @@ class AE5Source(Source):
         return self._session.resource_profile_list(format='dataframe')
 
     def _get_sessions(self):
-        sessions = self._session.session_list(format='dataframe')
-        if self._user:
+        sessions = self._session.session_list(format='dataframe', k8s=True)
+        if not len(sessions):
+            return pd.DataFrame(columns=self._session_columns)
+        if self._user and not self._is_admin:
             sessions = sessions[sessions.owner==self._user]
         return sessions[self._session_columns]
 
-    @cached(with_query=False)
+    def _get_jobs(self):
+        jobs = self._session.job_list(format='dataframe')
+        if not len(jobs):
+            return pd.DataFrame(columns=self._job_columns)
+        if self._user and not self._is_admin:
+            jobs = jobs[jobs.owner==self._user]
+        return jobs[self._job_columns]
+
+    def _get_resource_allocations(self):
+        """
+        Combines deployment resource profiles with resource information
+        and node information to allow computing total and per node
+        resource allocations.
+        """
+        resources = self.get('resources').copy()  # Resource profiles
+        nodes = self.get('nodes').copy()  # Cluster nodes
+        jobs = self.get('jobs').copy()
+        deployments = self.get('deployments').copy()
+        sessions = self.get('sessions').copy()
+
+        # Pre-process the nodes, resources and jobs tables
+        nodes['capacity/gpu'] = nodes['capacity/gpu'].astype(float)
+        nodes['capacity/cpu'] = nodes['capacity/cpu'].astype(float)
+        nodes['capacity/mem'] = nodes['capacity/mem'].apply(self._convert_value)
+        nodes_cols = ['capacity/mem', 'capacity/cpu', 'capacity/gpu', 'name']
+        nodes = nodes[nodes_cols]
+        nodes = nodes.rename(columns={
+            'name': 'node',
+            'capacity/mem': 'node/mem',
+            'capacity/cpu': 'node/cpu',
+            'capacity/gpu': 'node/gpu',
+        })
+        resources['cpu'] = resources['cpu'].astype(float)
+        resources['gpu'] = resources['gpu'].astype(float)
+        resources['memory'] = resources['memory'].apply(self._convert_value)
+        resources = resources.set_index('name')
+        resources_cols = ['cpu', 'memory', 'gpu']
+        resources = resources[resources_cols]
+        resources = resources.rename(columns={'memory': 'mem'})
+        resources = resources.add_prefix('resource/')
+        # ae5tools doesn't yet return a note column for the jobs
+        jobs['node'] = np.nan
+
+        deployments['type'] = 'deployment'
+        jobs['type'] = 'job'
+        sessions['type'] = 'session'
+
+        # Concat the deployments, sessions and jobs in a single utilizations table
+        common_cols = ['id', 'name', 'url', 'owner', 'resource_profile', 'state', 'node', 'type']
+        utilizations = pd.concat([deployments[common_cols], sessions[common_cols], jobs[common_cols]])
+        utilizations = pd.merge(utilizations, nodes, left_on='node', right_on='node', how='outer')
+        # To remove the orchestring node that has no attached jobs, resources or deployments.
+        utilizations = utilizations[~utilizations['id'].isna()]
+
+        allocations = pd.merge(utilizations, resources, left_on='resource_profile', right_index=True, how='left')
+
+        allocations['allocation/mem_pct'] = 100 * allocations['resource/mem'] / allocations['node/mem']
+        allocations['allocation/cpu_pct'] = 100 * allocations['resource/cpu'] / allocations['node/cpu']
+        allocations['allocation/gpu_pct'] = 100 * allocations['resource/gpu'] / allocations['node/gpu']
+
+        return allocations[self._allocation_columns]
+
+    @cached
     def get(self, table, **query):
         if table not in self._tables:
             raise ValueError(f"AE5Source has no '{table}' table, choose from {repr(self._tables)}.")
         return getattr(self, f'_get_{table}')()
 
+    @cached_schema
     def get_schema(self, table=None):
         schemas = {}
         for t in self._tables:

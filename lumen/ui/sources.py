@@ -1,22 +1,23 @@
 import os
 import pathlib
-import yaml
 
 import panel as pn
 import param
 import requests
+import yaml
 
 from panel.reactive import ReactiveHTML
 
 from lumen.sources import Source
+from lumen.state import state as lm_state
+from lumen.util import catch_and_notify
+
 from .base import WizardItem
 from .fast import FastComponent
 from .gallery import Gallery, GalleryItem
 from .state import state
 
-
 ASSETS_DIR = pathlib.Path(__file__).parent / 'assets'
-
 
 
 class SourceEditor(FastComponent):
@@ -24,7 +25,9 @@ class SourceEditor(FastComponent):
     cache_dir = param.String(label="Cache directory (optional)", precedence=1, doc="""
         Enter a relative cache directory.""")
 
-    preview = param.Parameter(default=pn.Row(sizing_mode='stretch_width'))
+    form = param.Parameter()
+
+    preview = param.Parameter()
 
     source_type = param.String(default="")
 
@@ -39,7 +42,9 @@ class SourceEditor(FastComponent):
 
     resize = param.Integer(default=0)
 
-    margin = param.Integer(default=5)
+    margin = param.Integer(default=10)
+
+    _preview_display = param.String(default='none')
 
     _scripts = {
         'resize': ['window.dispatchEvent(new Event("resize"))']
@@ -47,10 +52,13 @@ class SourceEditor(FastComponent):
 
     _template = """
     <span style="font-size: 2em"><b>{{ name }} - {{ source_type }}</b></span>
-    <div id="preview">${preview}</div>
+    <div id="preview-area" style="display: ${_preview_display}; margin-top: 2em;">
+      <form id="form" role="form" style="flex: 30%; max-width: 250px; line-height: 2em; margin-top">${form}</form>
+      <div id="preview" style="flex: auto; margin-left: 1em; overflow-y: auto;">${preview}</div>
+    </div>
     """
 
-    thumbnail = ASSETS_DIR / 'source.png'
+    _default_thumbnail = ASSETS_DIR / 'source.png'
 
     def __new__(cls, **params):
         if cls is not SourceEditor:
@@ -63,28 +71,54 @@ class SourceEditor(FastComponent):
         return super().__new__(cls)
 
     def __init__(self, **params):
-        super().__init__(**{k: v for k, v in params.items() if k in self.param})
+        spec = params.pop('spec', {})
+        params.update(**{
+            k: v for k, v in spec.items() if k in self.param and k not in params
+        })
+        self._source = None
+        self._thumbnail = params.pop('thumbnail', None)
+        super().__init__(spec=spec, **params)
+        self.form = pn.Column(sizing_mode='stretch_width')
+        theme = 'midnight' if getattr(pn.config, 'theme', 'default') == 'dark' else 'simple'
+        self.preview = pn.widgets.Tabulator(
+            sizing_mode='stretch_width', pagination='remote', page_size=12,
+            theme=theme, height=400
+        )
+        self._select_table = pn.widgets.Select(
+            name='Select table', margin=0, sizing_mode='stretch_width'
+        )
+        self._load_table = pn.widgets.Button(
+            name='Load table', sizing_mode='stretch_width', margin=(15, 0)
+        )
+        self._load_table.on_click(self._load_table_data)
+        self.form[:] = [self._select_table, self._load_table]
+
+    @catch_and_notify
+    def _load_table_data(self, event):
+        if self._source is None:
+            self._update_preview()
+        self.preview.value = self._source.get(self._select_table.value)
+
+    @property
+    def thumbnail(self):
+        if self._thumbnail:
+            return self._thumbnail
+        return self._default_thumbnail
 
     def _update_spec(self, *events):
         for event in events:
             self.spec[event.name] = event.new
 
+    @param.depends('spec', watch=True)
+    def _update_preview(self):
+        if self._preview_display == 'none':
+            return
+        self._source = Source.from_spec(self.spec)
+        self._select_table.options = self._source.get_tables()
+
     def _preview(self, event):
-        source = Source.from_spec(self.spec)
-        tables = source.get_tables()
-        table = pn.widgets.Select(name='Select table', options=tables, width=200, margin=0)
-        table_view = pn.widgets.Tabulator(
-            sizing_mode='stretch_width', pagination='remote', page_size=12, theme='midnight',
-            height=400
-        )
-        load = pn.widgets.Button(name='Load table', width=200, margin=(15, 0))
-        def load_table(event):
-            table_view.value = source.get(table.value)
-        load.on_click(load_table)
-        self.preview[:] = [
-            pn.Column(table, load, margin=(0, 20, 0, 0)),
-            table_view
-        ]
+        self._preview_display = 'flex' if self._preview_display == 'none' else 'none'
+        self._update_preview()
         self.resize += 1
 
     def _save(self):
@@ -97,16 +131,6 @@ class SourceGalleryItem(GalleryItem):
 
     thumbnail = param.Filename()
 
-    _template = """
-    <span style="font-size: 1.2em; font-weight: bold;">{{ name }}</p>
-    <fast-switch id="selected" checked=${selected} style="float: right;"></fast-switch>
-    <div id="details" style="margin: 1em 0; max-width: 320px;">
-      ${view}
-    </div>
-    <p style="height: 4em; max-width: 320px;">{{ description }}</p>
-    <fast-button id="edit-button" style="width: 320px;" onclick="${_open_modal}">Edit</fast-button>
-    """
-
     def __init__(self, **params):
         if 'description' not in params:
             params['description'] = ''
@@ -114,13 +138,18 @@ class SourceGalleryItem(GalleryItem):
         self.view = pn.pane.PNG(self.thumbnail, height=200, max_width=300, align='center')
         self._modal_content = [self.editor]
 
-    @param.depends('selected', watch=True)
+    @param.depends('selected', on_init=True, watch=True)
     def _add_spec(self):
         sources = state.spec['sources']
         if self.selected:
-            sources[self.name] = self.spec
+            spec = self.spec.copy()
+            spec.pop('metadata', None)
+            source = Source.from_spec(dict(spec, name=self.name))
+            lm_state.sources[self.name] = source
+            sources[self.name] = spec
         elif self.name in sources:
             del sources[self.name]
+            del lm_state.sources[self.name]
 
 
 class SourceGallery(WizardItem, Gallery):
@@ -138,11 +167,11 @@ class SourceGallery(WizardItem, Gallery):
     <span style="font-size: 1.2em; font-weight: bold;">{{ __doc__ }}</p>
     <div id="items" style="margin: 1em 0; display: flex; flex-wrap: wrap; gap: 1em;">
     {% for item in items.values() %}
-      <fast-card id="source-container" style="width: 350px; height: 380px;">
+      <fast-card id="source-container" style="width: 350px; height: 400px;">
         ${item}
       </fast-card>
     {% endfor %}
-      <fast-card id="sources-container-new" style="height: 380px; width: 350px; padding: 1em;">
+      <fast-card id="sources-container-new" style="height: 400px; width: 350px; padding: 1em;">
         <div style="display: grid;">
           <span style="font-size: 1.25em; font-weight: bold;">Add new source</span>
           <i id="add-button" onclick="${_open_modal}" class="fa fa-plus" style="font-size: 14em; margin: 0.2em auto;" aria-hidden="true"></i>
@@ -152,7 +181,7 @@ class SourceGallery(WizardItem, Gallery):
     """
 
     _gallery_item = SourceGalleryItem
-    
+
     _editor_type = SourceEditor
 
     def __init__(self, **params):
@@ -189,6 +218,7 @@ class SourceGallery(WizardItem, Gallery):
                 name=name, spec=source.spec, margin=0, selected=True,
                 editor=source, thumbnail=source.thumbnail
             )
+            lm_state.sources[name] = Source.from_spec(dict(source.spec, name=name))
             self.items[name] = item
             self.sources[name] = source
         self.param.trigger('items')
@@ -242,25 +272,25 @@ class IntakeSourceEditor(SourceEditor):
         </div>
       </div>
     </form>
-    <fast-button id="preview-button" onclick="${_preview}" style="position: absolute; right: 5px; margin-top: 1.5em; z-index: 100;">
-      Preview
-    </fast-button>
-    <fast-divider></fast-divider>
-    <div id="preview" style="margin-top: 1.8em;">${preview}</div>
+    <div style="display: flex; justify-content:flex-end; margin-right: 2em;">
+      <fast-button id="preview-button" onclick="${_preview}">Preview</fast-button>
+    </div>
+    <div id="preview-area" style="display: ${_preview_display}; margin-top: 2em;">
+      <form id="form" role="form" style="flex: 30%; max-width: 250px; line-height: 2em;">${form}</form>
+      <div id="preview" style="flex: auto; margin-left: 1em; overflow-y: auto;">${preview}</div>
+    </div>
     """
 
     _dom_events = {'cache_dir': ['keyup'], 'uri': ['keyup']}
 
+    _default_thumbnail = pathlib.Path(__file__).parent / 'assets' / 'intake.png'
+
     def __init__(self, **params):
-        import lumen.sources.intake # noqa
+        import lumen.sources.intake  # noqa
         params.pop('source_type', None)
         self.editor = pn.widgets.Ace(language='yaml', theme='dracula', margin=0, sizing_mode='stretch_width')
         self.upload = pn.widgets.FileInput(sizing_mode='stretch_width', margin=0)
         super().__init__(**params)
-
-    @property
-    def thumbnail(self):
-        return pathlib.Path(__file__).parent / 'assets' / 'intake.png'
 
     @param.depends('upload.value', watch=True)
     def _upload_catalog(self):
@@ -270,6 +300,7 @@ class IntakeSourceEditor(SourceEditor):
     def _update_catalog(self):
         self.spec['catalog'] = yaml.safe_load(self.editor.value)
 
+    @catch_and_notify
     @param.depends('uri', watch=True)
     def _load_file(self):
         uri = os.path.expanduser(self.uri)
@@ -342,17 +373,21 @@ class IntakeDremioSourceEditor(SourceEditor):
         </div>
       </div>
     </form>
-    <fast-button id="preview-button" onclick="${_preview}" style="position: absolute; right: 5px; margin-top: 1.5em; z-index: 100;">
-      Preview
-    </fast-button>
-    <fast-divider></fast-divider>
-    <div id="preview">${preview}</div>
+    <div style="display: flex; justify-content:flex-end; margin-right: 2em;">
+      <fast-button id="preview-button" onclick="${_preview}">Preview</fast-button>
+    </div>
+    <div id="preview-area" style="display: ${_preview_display}; margin-top: 2em;">
+      <form id="form" role="form" style="flex: 30%; max-width: 250px; line-height: 2em;">${form}</form>
+      <div id="preview" style="flex: auto; margin-left: 1em; overflow-y: auto;">${preview}</div>
+    </div>
     """
 
     _dom_events = {'uri': ['keyup'], 'username': ['keyup'], 'password': ['keyup']}
 
+    _default_thumbnail = pathlib.Path(__file__).parent / 'assets' / 'intake.png'
+
     def __init__(self, **params):
-        import lumen.sources.intake # noqa
+        import lumen.sources.intake  # noqa
         super().__init__(**params)
 
     @param.depends('cert', 'load_schema', 'tls', 'uri', 'password', 'username', watch=True)
@@ -360,9 +395,6 @@ class IntakeDremioSourceEditor(SourceEditor):
         for p in ('cert', 'load_schema', 'tls', 'uri', 'password', 'username'):
             self.spec[p] = getattr(self, p)
 
-    @property
-    def thumbnail(self):
-        return pathlib.Path(__file__).parent / 'assets' / 'intake.png'
 
 
 class FileSourceTable(ReactiveHTML):
@@ -380,7 +412,7 @@ class FileSourceTable(ReactiveHTML):
       <div style="flex: 25%; min-width: 150px; display: grid; margin-right: 1em;">
         <label for="name"><b>Table Name</b></label>
         <fast-text-field id="name" placeholder="Enter a name" value="${name}"></fast-text-field>
-        </div>
+      </div>
       <div style="flex: 60%; min-width: 300px; display: grid; margin-right: 1em;">
         <label for="uri"><b>URI</b></label>
         <fast-text-field id="uri" placeholder="{{ param.uri.doc }}" value="${uri}"></fast-text-field>
@@ -404,7 +436,7 @@ class FileSourceEditor(SourceEditor):
 
     source_type = param.String(default='file', readonly=True)
 
-    tables = param.List()
+    table_editors = param.List()
 
     kwargs = param.Dict(default={})
 
@@ -413,11 +445,11 @@ class FileSourceEditor(SourceEditor):
     <p>{{ __doc__ }}</p>
     <fast-divider></fast-divider>
     <div id="tables">
-      <fast-button id="add-table" onclick="${_add_table}" appearance="outline" style="float: right">
+      <fast-button id="add-table" onclick="${_add_table}" appearance="outline" style="float: right; margin-right: 2em;">
         <b>+</b>
       </fast-button>
       <span style="font-size: 1.2em; margin: 1em 0;"><b>Tables</b></span>
-      ${tables}
+      ${table_editors}
     </div>
     <div style="display: flex; margin-top: 1em;">
       <div style="display: grid; margin-right: 1em;">
@@ -430,42 +462,57 @@ class FileSourceEditor(SourceEditor):
         <fast-checkbox id="shared" value="${shared}"></fast-checkbox>
       </div>
     </div>
-    <fast-button id="preview-button" onclick="${_preview}" style="position: absolute; right: 5px; margin-top: 1.5em; z-index: 100;">
-      Preview
-    </fast-button>
-    <fast-divider></fast-divider>
-    <div id="preview" style="margin-top: 4em">${preview}</div>
+    <div style="display: flex; justify-content:flex-end; margin-right: 2em;">
+      <fast-button id="preview-button" onclick="${_preview}">Preview</fast-button>
+    </div>
+    <div id="preview-area" style="display: ${_preview_display}; margin-top: 2em;">
+      <form id="form" role="form" style="flex: 30%; max-width: 300px; line-height: 2em;">${form}</form>
+      <div id="preview" style="flex: auto; margin-left: 2em; overflow-y: auto;">${preview}</div>
+    </div>
     """
 
     _dom_events = {'cache_dir': ['keyup']}
 
     def __init__(self, **params):
-        if 'tables' in params:
-            tables = []
-            for name, table in params['tables'].items():
-                tables.append(FileSourceTable(name=name, uri=table))
-            params['tables'] = tables
-        params.pop('source_type', None)
         super().__init__(**params)
+        self._table_watchers = {}
+        for name, table in self.spec.get('tables', {}).items():
+            self._add_table(name=name, uri=table)
 
     @property
     def thumbnail(self):
+        if self._thumbnail:
+            return self._thumbnail
         assets = pathlib.Path(__file__).parent / 'assets'
-        exts = {table.uri.split('.')[-1] for table in self.tables}
+        exts = {table.uri.split('.')[-1] for table in self.table_editors}
         if len(exts) == 1:
             filename = assets/ f'{list(exts)[0]}.png'
             if os.path.isfile(filename):
                 return filename
-    
-    def _add_table(self, event=None):
-        table = FileSourceTable()
-        table.param.watch(self._remove_table, 'remove')
-        self.tables += [table]
 
+    @param.depends('table_editors', watch=True)
+    @catch_and_notify
+    def _update_spec(self, *events):
+        self.spec['tables'] = {t.name: t.uri for t in self.table_editors}
+        self.param.trigger('spec')
+
+    @catch_and_notify
+    def _add_table(self, event=None, **kwargs):
+        table = FileSourceTable(**kwargs)
+        remove = table.param.watch(self._remove_table, 'remove')
+        update = table.param.watch(self._update_spec, 'uri')
+        self._table_watchers[table.name] = (remove, update)
+        self.table_editors += [table]
+        self.resize += 1
+
+    @catch_and_notify
     def _remove_table(self, event):
-        self.tables.remove(event.obj)
-        self.param.trigger('tables')
-
+        self.table_editors.remove(event.obj)
+        watchers = self._table_watchers[event.obj.name]
+        for w in watchers:
+            event.obj.param.unwatch(w)
+        self.param.trigger('table_editors')
+        self.resize -= 1
 
 
 class SourcesEditor(WizardItem):
@@ -481,6 +528,8 @@ class SourcesEditor(WizardItem):
     source_name = param.String(doc="Enter a name for the source")
 
     source_type = param.Selector(doc="Select the type of source")
+
+    resize = param.Integer(default=0)
 
     _template = """
     <span style="font-size: 2em">Source Editor</span>
@@ -510,7 +559,7 @@ class SourcesEditor(WizardItem):
           </fast-button>
         </div>
       </form>
-      <div id="sources" style="flex: 75%; margin-left: 1em;">
+      <div id="sources" style="flex: 75%; margin-left: 1em; margin-right: 1em;">
         {% for source in sources.values() %}
         <div id="source-container">${source}</div>
         <fast-divider></faster-divider>
@@ -521,11 +570,16 @@ class SourcesEditor(WizardItem):
 
     _dom_events = {'source-name': ['keyup']}
 
+    _scripts = {
+        'resize': ['window.dispatchEvent(new Event("resize"))']
+    }
+
     def __init__(self, **params):
         super().__init__(**params)
         sources = param.concrete_descendents(Source)
         self.param.source_type.objects = types = [
             source.source_type for source in sources.values()
+            if source.source_type is not None
         ]+['intake', 'intake_dremio']
         if self.source_type is None and types:
             self.source_type = types[0]
@@ -534,6 +588,7 @@ class SourcesEditor(WizardItem):
     def _enable_add(self):
         self.disabled = not bool(self.source_name)
 
+    @catch_and_notify
     def _add_source(self, event):
         self.spec[self.source_name] = spec = {'type': self.source_type}
         editor = SourceEditor(
@@ -544,3 +599,4 @@ class SourcesEditor(WizardItem):
         self.param.trigger('sources')
         self.source_name = ''
         self.ready = True
+        self.resize += 1

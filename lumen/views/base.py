@@ -2,36 +2,107 @@
 The View classes render the data returned by a Source as a Panel
 object.
 """
-
 import sys
 
-from io import StringIO
+from io import BytesIO, StringIO
 from weakref import WeakKeyDictionary
 
 import numpy as np
-import param
 import panel as pn
+import param
 
 from bokeh.models import NumeralTickFormatter
 from panel.pane.base import PaneBase
 from panel.pane.perspective import (
-    THEMES as _PERSPECTIVE_THEMES, Plugin as _PerspectivePlugin
+    THEMES as _PERSPECTIVE_THEMES, Plugin as _PerspectivePlugin,
 )
 from panel.param import Param
+from panel.viewable import Viewable, Viewer
 
+from ..base import Component, MultiTypeComponent
 from ..config import _INDICATORS
-from ..filters import ParamFilter
-from ..sources import Source
-from ..transforms import Transform
-from ..util import resolve_module_reference
+from ..filters import Filter, ParamFilter
+from ..panel import DownloadButton
+from ..pipeline import Pipeline
+from ..state import state
+from ..transforms import SQLTransform, Transform
+from ..util import (
+    VARIABLE_RE, catch_and_notify, is_ref, resolve_module_reference,
+)
+from ..validation import ValidationError
+
+DOWNLOAD_FORMATS = ['csv', 'xlsx', 'json', 'parquet']
 
 
-class View(param.Parameterized):
+class Download(Component, Viewer):
     """
-    A View renders the data returned by a Source as a Viewable Panel
-    object. The base class provides methods which query the Source for
-    the latest data given the current filters and applies all
-    specified `transforms`.
+    `Download` is a plugin component for `View` components that adds a download button.
+    """
+
+    color = param.Color(default='grey', allow_None=True, doc="""
+      The color of the download button.""")
+
+    hide = param.Boolean(default=False, doc="""
+      Whether the download button hides when not in focus.""")
+
+    format = param.ObjectSelector(default=None, objects=DOWNLOAD_FORMATS, doc="""
+      The format to download the data in.""")
+
+    kwargs = param.Dict(default={}, doc="""
+      Keyword arguments passed to the serialization function, e.g.
+      data.to_csv(file_obj, **kwargs).""")
+
+    size = param.Integer(default=18, doc="""
+      The size of the download button.""")
+
+    view = param.Parameter(doc="Holds the current view.")
+
+    # Specification configuration
+    _internal_params = ['view', 'name']
+    _required_keys = ['format']
+    _validate_params = True
+
+    @classmethod
+    def validate(cls, spec, context=None):
+        if isinstance(spec, str):
+            spec = {'format': spec}
+        return super().validate(spec, context)
+
+    def __bool__(self):
+        return self.format is not None
+
+    def _table_data(self):
+        if self.format in ('json', 'csv'):
+            io = StringIO()
+        else:
+            io = BytesIO()
+        data = self.view.get_data()
+        if self.format == 'csv':
+            data.to_csv(io, **self.kwargs)
+        elif self.format == 'json':
+            data.to_json(io, **self.kwargs)
+        elif self.format == 'xlsx':
+            data.to_excel(io, **self.kwargs)
+        elif self.format == 'parquet':
+            data.to_parquet(io, **self.kwargs)
+        io.seek(0)
+        return io
+
+    def __panel__(self):
+        filename = f'{self.view.pipeline.table}.{self.format}'
+        return DownloadButton(
+            callback=self._table_data, filename=filename, color=self.color,
+            size=18, hide=self.hide
+        )
+
+
+class View(MultiTypeComponent, Viewer):
+    """
+    `View` components provide a visual representation for the data returned by a `Source` or `Pipeline`.
+
+    The `View` must return a Panel object or an object that can be
+    rendered by Panel. The base class provides methods which query the
+    the provided `Pipeline`.
 
     Subclasses should use these methods to query the data and return
     a Viewable Panel object in the `get_panel` method.
@@ -40,22 +111,19 @@ class View(param.Parameterized):
     controls = param.List(default=[], doc="""
         Parameters that should be exposed as widgets in the UI.""")
 
-    filters = param.List(constant=True, doc="""
-        A list of Filter object providing the query parameters for the
-        Source.""")
+    download = param.ClassSelector(class_=Download, default=Download(), doc="""
+        The download objects determines whether and how the source tables
+        can be downloaded.""")
 
-    source = param.ClassSelector(class_=Source, constant=True, doc="""
-        The Source to query for the data.""")
+    pipeline = param.ClassSelector(class_=Pipeline, doc="""
+        The data pipeline that drives the View.""")
+
+    rerender = param.Event(default=False, doc="""
+        An event that is triggered whenever the View requests a re-render.""")
 
     selection_group = param.String(default=None, doc="""
         Declares a selection group the plot is part of. This feature
         requires the separate HoloViews library.""")
-
-    transforms = param.List(constant=True, doc="""
-        A list of transforms to apply to the data returned by the
-        Source before visualizing it.""")
-
-    table = param.String(doc="The table being visualized.")
 
     field = param.Selector(doc="The field being visualized.")
 
@@ -66,6 +134,8 @@ class View(param.Parameterized):
 
     # Parameters which reference fields in the table
     _field_params = ['field']
+
+    _requires_source = True
 
     _selections = WeakKeyDictionary()
 
@@ -78,30 +148,56 @@ class View(param.Parameterized):
         self._ls = None
         self._panel = None
         self._updates = None
+        refs = params.pop('refs', {})
         self.kwargs = {k: v for k, v in params.items() if k not in self.param}
 
         # Populate field selector parameters
         params = {k: v for k, v in params.items() if k in self.param}
-        source, table = params.pop('source', None), params.pop('table', None)
-        if source is None:
-            raise ValueError("Views must declare a Source.")
-        if table is None:
-            raise ValueError("Views must reference a table on the declared Source.")
-        fields = list(source.get_schema(table))
+        pipeline = params.pop('pipeline', None)
+        if pipeline is None:
+            raise ValueError("Views must declare a Pipeline.")
+        fields = list(pipeline.schema)
         for fp in self._field_params:
             if isinstance(self.param[fp], param.Selector):
                 self.param[fp].objects = fields
-        super().__init__(source=source, table=table, **params)
-        for transform in self.transforms:
-            for fp in transform._field_params:
-                if isinstance(transform.param[fp], param.Selector):
-                    transform.param[fp].objects = fields
+        pipeline.param.watch(self.update, 'data')
+        super().__init__(pipeline=pipeline, refs=refs, **params)
+        self.param.watch(self.update, [p for p in self.param if p not in ('rerender', 'selection_expr', 'name')])
+        self.download.view = self
         if self.selection_group:
             self._init_link_selections()
+        self._initialized = False
+
+    def __panel__(self):
+        if not self._initialized:
+            self.update()
+        return pn.panel(pn.bind(lambda e: self.panel, self.param.rerender))
+
+    def _update_ref(self, pname, ref, *events):
+        # Note: Do not trigger update in View if Pipeline references
+        # the same variable and is not set up to auto-update
+        for event in events:
+            if self.pipeline.auto_update:
+                continue
+            refs = []
+            current = self.pipeline
+            while current is not None:
+                for ref in current.refs:
+                    for subref in VARIABLE_RE.findall(ref):
+                        if subref not in refs:
+                            refs.append(subref)
+                current = current.pipeline
+            if any(
+                ref == event.name
+                for e in events
+                for ref in refs if ref.startswith('$variables')
+            ):
+                return
+        super()._update_ref(pname, ref, *events)
 
     def _init_link_selections(self):
-        doc = pn.state.curdoc
-        if self._ls is not None or doc is None:
+        doc = pn.state.curdoc or self.pipeline
+        if self._ls is not None:
             return
         if doc not in View._selections and self.selection_group:
             View._selections[doc] = {}
@@ -118,25 +214,23 @@ class View(param.Parameterized):
         self.selection_expr = event.new
 
     @classmethod
-    def _get_type(cls, view_type):
-        """
-        Returns the matching View type.
-        """
-        if '.' in view_type:
-            return resolve_module_reference(view_type, View)
-        try:
-            __import__(f'lumen.views.{view_type}')
-        except Exception:
-            pass
-        for view in param.concrete_descendents(cls).values():
-            if view.view_type == view_type:
-                return view
-        if view_type is not None:
-            raise ValueError(f"View type '{view_type}' could not be found.")
-        return View
+    def _validate_filters(cls, *args, **kwargs):
+        return cls._validate_list_subtypes('filters', Filter, *args, **kwargs)
 
     @classmethod
-    def from_spec(cls, spec, source, filters):
+    def _validate_transforms(cls, *args, **kwargs):
+        return cls._validate_list_subtypes('transforms', Transform, *args, **kwargs)
+
+    @classmethod
+    def _validate_sql_transforms(cls, *args, **kwargs):
+        return cls._validate_list_subtypes('sql_transforms', SQLTransform, *args, **kwargs)
+
+    @classmethod
+    def _validate_pipeline(cls, *args, **kwargs):
+        return cls._validate_str_or_spec('pipeline', Pipeline, *args, **kwargs)
+
+    @classmethod
+    def from_spec(cls, spec, source=None, filters=None, pipeline=None):
         """
         Resolves a View specification given the schema of the Source
         it will be filtering on.
@@ -145,6 +239,9 @@ class View(param.Parameterized):
         ----------
         spec: dict
             Specification declared as a dictionary of parameter values.
+        pipeline: lumen.pipeline.Pipeline
+            The Lumen pipeline driving this View. Must not be supplied
+            if the spec contains a pipeline definition or reference.
         source: lumen.sources.Source
             The Source object containing the tables the View renders.
         filters: list(lumen.filters.Filter)
@@ -155,29 +252,76 @@ class View(param.Parameterized):
         -------
         The resolved View object.
         """
-        spec = dict(spec)
-        transform_specs = spec.pop('transforms', [])
-        transforms = [Transform.from_spec(tspec) for tspec in transform_specs]
+        spec = spec.copy()
+        resolved_spec, refs = {}, {}
+
+        # Resolve pipeline
+        if 'pipeline' in spec:
+            if pipeline is not None:
+                raise ValueError(
+                    "Either specify the pipeline as part of the specification "
+                    "or pass it in explicitly, not both."
+                )
+            pipeline = spec['pipeline']
+            if isinstance(pipeline, str):
+                resolved_spec['pipeline'] = state.pipelines[pipeline]
+            else:
+                resolved_spec['pipeline'] = Pipeline.from_spec(pipeline)
+        else:
+            overrides = {
+                p: spec.pop(p) for p in Pipeline.param if p != 'name' and p in spec
+            }
+            for ts in ('transforms', 'sql_transforms'):
+                if ts in overrides:
+                    overrides[ts] = [Transform.from_spec(t) for t in overrides[ts]]
+            if pipeline is None:
+                if isinstance(source, str):
+                    source = state.sources[source]
+                pipeline = Pipeline(source=source, **overrides)
+            elif 'table' in overrides and len(overrides) == 1:
+                if pipeline.table != overrides['table']:
+                    raise ValidationError(
+                        'Table declared on view does not match table declared '
+                        'on pipeline.', spec, 'table'
+                    )
+            elif overrides:
+                pipeline = pipeline.chain(
+                    filters=overrides.get('filters', []),
+                    transforms=overrides.get('transforms', []),
+                    sql_transforms=overrides.get('sql_transforms', []),
+                    _chain_update=True
+                )
+            resolved_spec['pipeline'] = pipeline
+
+        # Resolve View parameters
         view_type = View._get_type(spec.pop('type', None))
-        resolved_spec = {}
         for p, value in spec.items():
-            if p not in view_type.param:
+            if p in resolved_spec:
+                continue
+            elif p not in view_type.param:
                 resolved_spec[p] = value
                 continue
             parameter = view_type.param[p]
+            if is_ref(value):
+                refs[p] = value
+                value = state.resolve_reference(value)
             if isinstance(parameter, param.ObjectSelector) and parameter.names:
                 try:
                     value = parameter.names.get(value, value)
                 except Exception:
                     pass
             resolved_spec[p] = value
-        view = view_type(
-            filters=filters, source=source, transforms=transforms,
-            **resolved_spec
-        )
+
+        # Resolve download options
+        download_spec = spec.pop('download', {})
+        if isinstance(download_spec, str):
+            download_spec = {'format': download_spec}
+        resolved_spec['download'] = Download.from_spec(download_spec)
+
+        view = view_type(refs=refs, **resolved_spec)
 
         # Resolve ParamFilter parameters
-        for filt in filters:
+        for filt in (filters or []):
             if isinstance(filt, ParamFilter):
                 if not isinstance(filt.parameter, str):
                     continue
@@ -189,15 +333,18 @@ class View(param.Parameterized):
     def __bool__(self):
         return self._cache is not None and len(self._cache) > 0
 
+    @catch_and_notify
     def _update_panel(self, *events):
         """
         Updates the cached Panel object and returns a boolean value
         indicating whether a rerender is required.
         """
+        self._sync_refs(trigger=False)
         if self._panel is not None:
             self._cleanup()
-            self._updates = self._get_params()
-            if self._updates is not None:
+            updates = self._get_params()
+            if updates is not None:
+                self._panel.param.set_param(**updates)
                 return False
         self._panel = self.get_panel()
         return True
@@ -222,27 +369,10 @@ class View(param.Parameterized):
         """
         if self._cache is not None:
             return self._cache
-        query = {}
-        for filt in self.filters:
-            filt_query = filt.query
-            if (filt_query is not None and
-            not getattr(filt, 'disabled', None) and
-            (filt.table is None or filt.table == self.table)):
-                query[filt.field] = filt_query
-        data = self.source.get(self.table, **query)
-        for transform in self.transforms:
-            data = transform.apply(data)
-        if len(data):
-            data = self.source._filter_dataframe(data, **query)
-        for filt in self.filters:
-            if not isinstance(filt, ParamFilter):
-                continue
-            from holoviews import Dataset
-            if filt.value is not None:
-                ds = Dataset(data)
-                data = ds.select(filt.value).data
-        self._cache = data
-        return data
+        if self.pipeline.data is None:
+            self.pipeline._update_data()
+        self._cache = data = self.pipeline.data
+        return data.copy()
 
     def get_value(self, field=None):
         """
@@ -283,6 +413,35 @@ class View(param.Parameterized):
         """
         return pn.panel(self.get_data())
 
+    def to_spec(self, context=None):
+        """
+        Exports the full specification to reconstruct this component.
+
+        Parameters
+        ----------
+        context: Dict[str, Any]
+          Context contains the specification of all previously serialized components,
+          e.g. to allow resolving of references.
+
+        Returns
+        -------
+        Declarative specification of this component.
+        """
+        spec = super().to_spec(context)
+        spec.update(self.kwargs)
+        if context is None:
+            return spec
+        for name, pipeline in context.get('pipelines', {}).items():
+            if spec.get('pipeline') == pipeline:
+                spec['pipeline'] = name
+                return spec
+        if 'pipeline' in spec:
+            if 'pipelines' not in context:
+                context['pipelines'] = {}
+            context['pipelines'][self.pipeline.name] = spec['pipeline']
+            spec['pipeline'] = self.pipeline.name
+        return spec
+
     def update(self, *events, invalidate_cache=True):
         """
         Triggers an update in the View.
@@ -293,51 +452,102 @@ class View(param.Parameterized):
             param events that may trigger an update.
         invalidate_cache : bool
             Whether to clear the View's cache.
-
-        Returns
-        -------
-        stale : bool
-            Whether the panel on the View is stale and needs to be
-            rerendered.
         """
         if invalidate_cache:
             self._cache = None
-        return self._update_panel()
+        stale = self._update_panel()
+        self._initialized = True
+        if stale:
+            self.param.trigger('rerender')
 
     def _get_params(self):
         return None
 
     @property
     def control_panel(self):
-        column = pn.Column(sizing_mode='stretch_width')
-        if self.controls:
-            column.append(
-                Param(
-                    self.param, parameters=self.controls, sizing_mode='stretch_width'
-                )
-            )
-        for trnsfm in self.transforms:
-            if trnsfm.controls:
-                column.append(trnsfm.control_panel)
-        index = (1 if self.controls else 0)
-        if len(column) > index:
-            column.insert(index, '### Transforms')
-        return column
+        return Param(
+            self.param, parameters=self.controls, sizing_mode='stretch_width'
+        )
 
     @property
     def panel(self):
-        if isinstance(self._panel, PaneBase):
-            pane = self._panel
-            if len(pane.layout) == 1 and pane._unpack:
-                return pane.layout[0]
-            return pane._layout
-        return self._panel
+        if not self._initialized:
+            self.update()
+        panel = self._panel
+        if isinstance(panel, PaneBase):
+            if len(panel.layout) == 1 and panel._unpack:
+                panel = panel.layout[0]
+            else:
+                panel = panel._layout
+        if self.download:
+            return pn.Column(self.download, panel, sizing_mode='stretch_width')
+        return panel
+
+    @property
+    def refs(self):
+        refs = super().refs
+        for c in self.controls:
+            if c not in refs:
+                refs.append(c)
+        return refs
+
+
+class Panel(View):
+    """
+    `Panel` views provide a way to declaratively wrap a Panel component.
+
+    The `Panel` View is a very general purpose view that allows
+    expressing arbitrary Panel objects as a specification. The Panel
+    specification may be arbitrarily nested making it possible to
+    specify entire layouts.  Additionally the Panel specification also
+    supports references, including standard source and variable
+    references and a custom `$data` reference that inserts the current
+    data of the `View`.
+
+    ```
+    type: panel
+      spec:
+       type: panel.layout.Column
+       objects:
+         - type: pn.pane.Markdown
+           object: '# My custom title'
+         - type: pn.pane.DataFrame
+           object: $data
+    ```
+    """
+
+    spec = param.Dict()
+
+    view_type = 'panel'
+
+    _requires_source = False
+
+    def _resolve_spec(self, spec):
+        if not isinstance(spec, dict) or 'type' not in spec:
+            return spec
+        spec = self.spec.copy()
+        ptype = resolve_module_reference(spec.pop('type'), Viewable)
+        params = {}
+        for p, v in spec.items():
+            if isinstance(v, dict) and 'type' in v:
+                v = self._resolve_spec(v)
+            elif isinstance(v, list):
+                v = [self._resolve_spec(sv) for sv in v]
+            elif is_ref(v):
+                if v == '$data':
+                    v = self.get_data()
+                else:
+                    v = state.resolve_reference(v)
+            params[p] = v
+        return ptype(**params)
+
+    def get_panel(self):
+        return self._resolve_spec(self.spec)
 
 
 class StringView(View):
     """
-    The StringView renders the latest value of the field as a HTML
-    string with a specified fontsize.
+    `StringView` renders the latest value of the field as a HTML string.
     """
 
     font_size = param.String(default='24pt', doc="""
@@ -358,11 +568,9 @@ class StringView(View):
         return params
 
 
-
 class IndicatorView(View):
     """
-    The IndicatorView renders the latest field value as a Panel
-    Indicator.
+    `IndicatorView` renders the latest field value as a Panel `Indicator`.
     """
 
     indicator = param.Selector(objects=_INDICATORS, doc="""
@@ -395,14 +603,9 @@ class IndicatorView(View):
         return params
 
 
-class hvPlotView(View):
-    """
-    The hvPlotView renders the queried data as a bokeh plot generated
-    with hvPlot. hvPlot allows for a concise declaration of a plot via
-    its simple API.
-    """
+class hvPlotBaseView(View):
 
-    kind = param.String(doc="The kind of plot, e.g. 'scatter' or 'line'.")
+    kind = param.String(default=None, doc="The kind of plot, e.g. 'scatter' or 'line'.")
 
     x = param.Selector(doc="The column to render on the x-axis.")
 
@@ -411,6 +614,59 @@ class hvPlotView(View):
     by = param.ListSelector(doc="The column(s) to facet the plot by.")
 
     groupby = param.ListSelector(doc="The column(s) to group by.")
+
+    __abstract = True
+
+    def __init__(self, **params):
+        import hvplot.pandas  # noqa
+        if 'dask' in sys.modules:
+            try:
+                import hvplot.dask  # noqa
+            except Exception:
+                pass
+        if 'by' in params and isinstance(params['by'], str):
+            params['by'] = [params['by']]
+        if 'groupby' in params and isinstance(params['groupby'], str):
+            params['groupby'] = [params['groupby']]
+        super().__init__(**params)
+
+
+class hvPlotUIView(hvPlotBaseView):
+    """
+    `hvPlotUIView` displays provides a component for exploring datasets interactively.
+    """
+
+    view_type = 'hvplot_ui'
+
+    def _get_args(self):
+        from hvplot.ui import hvPlotExplorer
+        params = {
+            k: v for k, v in self.param.values().items()
+            if k in hvPlotExplorer.param and v is not None and k != 'name'
+        }
+        return (self.get_data(),), dict(params, **self.kwargs)
+
+    def __panel__(self):
+        panel = self.get_panel()
+        def ui(*events):
+            panel._data = self.get_data()
+            panel._plot()
+            return panel
+        return pn.bind(ui, self.param.rerender)
+
+    def get_panel(self):
+        from hvplot.ui import hvDataFrameExplorer
+        args, kwargs = self._get_args()
+        return hvDataFrameExplorer(*args, **kwargs)
+
+
+class hvPlotView(hvPlotBaseView):
+    """
+    `hvPlotView` renders the queried data as a bokeh plot generated with hvPlot.
+
+    hvPlot allows for a concise but powerful declaration of a plot via
+    its simple API.
+    """
 
     opts = param.Dict(default={}, doc="HoloViews options to apply on the plot.")
 
@@ -425,19 +681,11 @@ class hvPlotView(View):
 
     _field_params = ['x', 'y', 'by', 'groupby']
 
+    _ignore_kwargs = ['tables']
+
     _supports_selections = True
 
     def __init__(self, **params):
-        import hvplot.pandas # noqa
-        if 'dask' in sys.modules:
-            try:
-                import hvplot.dask # noqa
-            except Exception:
-                pass
-        if 'by' in params and isinstance(params['by'], str):
-            params['by'] = [params['by']]
-        if 'groupby' in params and isinstance(params['groupby'], str):
-            params['groupby'] = [params['groupby']]
         self._stream = None
         self._linked_objs = []
         super().__init__(**params)
@@ -445,13 +693,15 @@ class hvPlotView(View):
     def get_plot(self, df):
         processed = {}
         for k, v in self.kwargs.items():
+            if k in self._ignore_kwargs:
+                continue
             if k.endswith('formatter') and isinstance(v, str) and '%' not in v:
                 v = NumeralTickFormatter(format=v)
             processed[k] = v
         if self.streaming:
             processed['stream'] = self._stream
         plot = df.hvplot(
-            kind=self.kind, x=self.x, y=self.y, **processed
+            kind=self.kind, x=self.x, y=self.y, by=self.by, groupby=self.groupby, **processed
         )
         plot = plot.opts(**self.opts) if self.opts else plot
         if self.selection_group or 'selection_expr' in self._param_watchers:
@@ -502,12 +752,6 @@ class hvPlotView(View):
             param events that may trigger an update.
         invalidate_cache : bool
             Whether to clear the View's cache.
-
-        Returns
-        -------
-        stale : bool
-            Whether the panel on the View is stale and needs to be
-            rerendered.
         """
         # Skip events triggered by a parameter change on this View
         own_parameters = [self.param[p] for p in self.param]
@@ -518,19 +762,25 @@ class hvPlotView(View):
             for e in events
         )
         if own_events:
-            return False
+            return
         if invalidate_cache:
             self._cache = None
         if not self.streaming or self._stream is None:
-            return self._update_panel()
-        self._stream.send(self.get_data())
-        return False
-
+            stale = self._update_panel()
+            if stale:
+                self.param.trigger('rerender')
+        else:
+            self._stream.send(self.get_data())
 
 class Table(View):
     """
-    Renders a Source table using a Panel Table widget.
+    `Table` renders data using the powerful Panel `Tabulator` component.
+
+    See https://panel.holoviz.org/reference/widgets/Tabulator.html
     """
+
+    page_size = param.Integer(default=20, bounds=(1, None), doc="""
+        Number of rows to render per page, if pagination is enabled.""")
 
     view_type = 'table'
 
@@ -540,50 +790,65 @@ class Table(View):
         return pn.widgets.tables.Tabulator(**self._get_params())
 
     def _get_params(self):
-        return dict(value=self.get_data(), disabled=True, **self.kwargs)
+        return dict(value=self.get_data(), disabled=True, page_size=self.page_size,
+                    **self.kwargs)
 
 
-class Download(View):
+class DownloadView(View):
     """
-    The Download View allows downloading the current table as a csv or
-    xlsx file.
+    `DownloadView` renders a button that allows downloading data as CSV, Excel, and parquet files.
     """
 
     filename = param.String(default='data', doc="""
       Filename of the downloaded file.""")
 
-    filetype = param.Selector(default='csv', objects=['csv', 'xlsx'], doc="""
-      File type of the downloaded file.""")
+    format = param.ObjectSelector(default=None, objects=DOWNLOAD_FORMATS, doc="""
+      The format to download the data in.""")
 
-    save_kwargs = param.Dict(default={}, doc="""
-      Options for the to_csv or to_excel methods.""")
+    kwargs = param.Dict(default={}, doc="""
+      Keyword arguments passed to the serialization function, e.g.
+      data.to_csv(file_obj, **kwargs).""")
 
     view_type = 'download'
+
+    _required_keys = ["format"]
 
     def __bool__(self):
         return True
 
-    def _get_file_data(self):
-        df = self.get_data()
-        sio = StringIO()
-        if self.filetype == 'csv':
-            savefn = df.to_csv
-        elif self.filetype == 'xlsx':
-            savefn = df.to_excel
-        savefn(sio, **self.save_kwargs)
-        sio.seek(0)
-        return sio
+    @catch_and_notify("Download failed")
+    def _table_data(self):
+        if self.format in ('json', 'csv'):
+            io = StringIO()
+        else:
+            io = BytesIO()
+        data = self.get_data()
+        if self.format == 'csv':
+            data.to_csv(io, **self.kwargs)
+        elif self.format == 'json':
+            data.to_json(io, **self.kwargs)
+        elif self.format == 'xlsx':
+            data.to_excel(io, **self.kwargs)
+        elif self.format == 'parquet':
+            data.to_parquet(io, **self.kwargs)
+        io.seek(0)
+        return io
 
     def get_panel(self):
         return pn.widgets.FileDownload(**self._get_params())
 
     def _get_params(self):
-        filename = f'{self.filename}.{self.filetype}'
-        return dict(filename=filename, callback=self._get_file_data, **self.kwargs)
+        filename = f'{self.filename}.{self.format}'
+        return dict(filename=filename, callback=self._table_data, **self.kwargs)
 
 
 
 class PerspectiveView(View):
+    """
+    `PerspectiveView` renders data into a Perspective widget.
+
+    See https://panel.holoviz.org/reference/panes/Perspective.html for more details.
+    """
 
     aggregates = param.Dict(None, allow_None=True, doc="""
         How to aggregate. For example {x: "distinct count"}""")
@@ -633,6 +898,9 @@ class PerspectiveView(View):
 
 
 class AltairView(View):
+    """
+    `AltairView` provides a declarative way to render Altair charts.
+    """
 
     chart = param.Dict(default={}, doc="Keyword argument for Chart.")
 
@@ -697,3 +965,6 @@ class AltairView(View):
 
     def get_panel(self):
         return pn.pane.Vega(**self._get_params())
+
+
+__all__ = [name for name, obj in locals().items() if isinstance(obj, type) and issubclass(obj, View)]

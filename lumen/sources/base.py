@@ -1,15 +1,17 @@
 import hashlib
 import json
-import os
 import re
 import shutil
-import sys
+import threading
+import warnings
+import weakref
 
 from concurrent import futures
 from functools import wraps
 from itertools import product
+from os.path import basename
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import numpy as np
 import pandas as pd
@@ -17,72 +19,116 @@ import panel as pn
 import param
 import requests
 
+from panel.io.cache import _generate_hash
+
+from ..base import MultiTypeComponent
 from ..filters import Filter
 from ..state import state
-from ..transforms import Transform
-from ..util import (
-    get_dataframe_schema, merge_schemas, resolve_module_reference
-)
+from ..transforms import Filter as FilterTransform, Transform
+from ..util import get_dataframe_schema, is_ref, merge_schemas
+from ..validation import ValidationError, match_suggestion_message
+
+try:
+    import dask.dataframe as dd
+except ImportError:
+    dd = None
 
 
-def cached(with_query=True):
+def cached(method, locks=weakref.WeakKeyDictionary()):
     """
     Adds caching to a Source.get query.
-
-    Arguments
-    ---------
-    with_query: boolean
-        Whether the Source.get query uses the query parameters.
-        Sources that have no ability to pre-filter the data can
-        use this option to cache the full query and the decorator
-        will apply the filtering after the fact.
 
     Returns
     -------
     Returns method wrapped in caching functionality.
     """
-    def _inner_cached(method):
-        @wraps(method)
-        def wrapped(self, table, **query):
-            cache_query = query if with_query else {}
-            df, no_query = self._get_cache(table, **cache_query)
-            if df is None:
-                if not with_query and (hasattr(self, 'dask') or hasattr(self, 'use_dask')):
-                    cache_query['__dask'] = True
-                df = method(self, table, **cache_query)
-                cache_query.pop('__dask', None)
-                self._set_cache(df, table, **cache_query)
-            filtered = df
-            if (not with_query or no_query) and query:
-                filtered = self._filter_dataframe(df, **query)
-            if getattr(self, 'dask', False) or not hasattr(filtered, 'compute'):
-                return filtered
-            return filtered.compute()
-        return wrapped
-    return _inner_cached
-
-
-def cached_schema(method):
     @wraps(method)
-    def wrapped(self, table=None):
-        schema = self._get_schema_cache()
-        if schema is None:
-            schema = method(self)
-            self._set_schema_cache(schema)
-        if table is None:
-            return schema
-        return schema[table]
+    def wrapped(self, table, **query):
+        if self._supports_sql and not self.cache_per_query and 'sql_transforms' in query:
+            raise RuntimeError(
+                'SQLTransforms cannot be used on a Source with cache_per_query '
+                'being disabled. Ensure you set `cache_per_query=True`.'
+            )
+        if self in locks:
+            main_lock = locks[self]['main']
+        else:
+            main_lock = threading.RLock()
+            locks[self] = {'main': main_lock}
+        with main_lock:
+            if table in locks:
+                lock = locks[self][table]
+            else:
+                locks[self][table] = lock = threading.RLock()
+        cache_query = query if self.cache_per_query else {}
+        with lock:
+            df, no_query = self._get_cache(table, **cache_query)
+        if df is None:
+            if not self.cache_per_query and (hasattr(self, 'dask') or hasattr(self, 'use_dask')):
+                cache_query['__dask'] = True
+            df = method(self, table, **cache_query)
+            with lock:
+                self._set_cache(df, table, **cache_query)
+        filtered = df
+        if (not self.cache_per_query or no_query) and query:
+            filtered = FilterTransform.apply_to(
+                df, conditions=list(query.items())
+            )
+        if getattr(self, 'dask', False) or not hasattr(filtered, 'compute'):
+            return filtered
+        return filtered.compute()
     return wrapped
 
 
+def cached_schema(method, locks=weakref.WeakKeyDictionary()):
+    @wraps(method)
+    def wrapped(self, table=None):
+        if self in locks:
+            main_lock = locks[self]['main']
+        else:
+            main_lock = threading.RLock()
+            locks[self] = {'main': main_lock}
+        with main_lock:
+            schema = self._get_schema_cache() or {}
+        tables = self.get_tables() if table is None else [table]
+        if all(table in schema for table in tables):
+            return schema if table is None else schema[table]
+        for missing in tables:
+            if missing in schema:
+                continue
+            with main_lock:
+                if missing in locks[self]:
+                    lock = locks[self][missing]
+                else:
+                    locks[self][missing] = lock = threading.RLock()
+            with lock:
+                with main_lock:
+                    new_schema = self._get_schema_cache() or {}
+                if missing in new_schema:
+                    schema[missing] = new_schema[missing]
+                else:
+                    schema[missing] = method(self, missing)
+            with main_lock:
+                self._set_schema_cache(schema)
+        return schema if table is None else schema[table]
+    return wrapped
 
-class Source(param.Parameterized):
+
+class Source(MultiTypeComponent):
     """
-    A Source provides a set of tables which declare their available
-    fields. The Source must also be able to return a schema describing
-    the types of the variables and indexes in each table and allow
-    querying the data.
+    `Source` components provide allow querying all kinds of data.
+
+    A `Source` can return one or more tables queried using the
+    `.get_tables` method, a description of the data returned by each
+    table in the form of a JSON schema accessible via the `.get_schema`
+    method and lastly a `.get` method that allows filtering the data.
+
+    The Source base class also implements both in-memory and disk
+    caching which can be enabled if a `cache_dir` is provided. Data
+    cached to disk is stored as parquet files.
     """
+
+    cache_per_query = param.Boolean(default=True, doc="""
+        Whether to query the whole dataset or individual queries.""")
 
     cache_dir = param.String(default=None, doc="""
         Whether to enable local cache and write file to disk.""")
@@ -92,112 +138,27 @@ class Source(param.Parameterized):
         dashboard. If set to `True` the Source will be loaded on
         initial server load.""")
 
+    root = param.ClassSelector(class_=Path, precedence=-1, doc="""
+        Root folder of the cache_dir, default is config.root""")
+
     source_type = None
 
     __abstract = True
 
-    @classmethod
-    def _get_type(cls, source_type):
-        if '.' in source_type:
-            return resolve_module_reference(source_type, Source)
-        try:
-            __import__(f'lumen.sources.{source_type}')
-        except Exception:
-            pass
-        for source in param.concrete_descendents(cls).values():
-            if source.source_type == source_type:
-                return source
-        raise ValueError(f"No Source for source_type '{source_type}' could be found.")
+    # Specification configuration
+    _internal_params = ['name', 'root']
 
-    @classmethod
-    def _range_filter(cls, column, start, end):
-        if start is None and end is None:
-            return None
-        elif start is None:
-            mask = column<=end
-        elif end is None:
-            mask = column>=start
-        else:
-            mask = (column>=start) & (column<=end)
-        return mask
+    # Declare whether source supports SQL transforms
+    _supports_sql = False
 
-    @classmethod
-    def _filter_dataframe(cls, df, **query):
-        """
-        Filter the DataFrame.
-
-        Parameters
-        ----------
-        df : DataFrame
-           The DataFrame to filter
-        query : dict
-            A dictionary containing all the query parameters
-
-        Returns
-        -------
-        DataFrame
-            The filtered DataFrame
-        """
-        filters = []
-        for k, val in query.items():
-            if k not in df.columns:
-                continue
-            column = df[k]
-            if np.isscalar(val):
-                mask = column == val
-            elif isinstance(val, list) and all(isinstance(v, tuple) and len(v) == 2 for v in val):
-                val = [v for v in val if v is not None]
-                if not val:
-                    continue
-                mask = cls._range_filter(column, *val[0])
-                for v in val[1:]:
-                    mask |= cls._range_filter(column, *v)
-                if mask is not None:
-                    filters.append(mask)
-                continue
-            elif isinstance(val, list):
-                if not val:
-                    continue
-                mask = column.isin(val)
-            elif isinstance(val, tuple):
-                mask = cls._range_filter(column, *val)
-            if mask is not None:
-                filters.append(mask)
-        if filters:
-            mask = filters[0]
-            for f in filters[1:]:
-                mask &= f
-            df = df[mask]
-        return df
-
-    @classmethod
-    def _resolve_reference(cls, reference):
-        refs = reference[1:].split('.')
-        if len(refs) == 3:
-            sourceref, table, field = refs
-        elif len(refs) == 2:
-            sourceref, table = refs
-        elif len(refs) == 1:
-            (sourceref,) = refs
-
-        source = cls.from_spec(sourceref)
-        if len(refs) == 1:
-            return source
-        if len(refs) == 2:
-            return source.get(table)
-        table_schema = source.get_schema(table)
-        if field not in table_schema:
-            raise ValueError(f"Field '{field}' was not found in "
-                             f"'{sourceref}' table '{table}'.")
-        field_schema = table_schema[field]
-        if 'enum' not in field_schema:
-            raise ValueError(f"Field '{field}' schema does not "
-                             "declare an enum.")
-        return field_schema['enum']
+    @property
+    def _reload_params(self):
+        "List of parameters that trigger a data reload."
+        return list(self.param)
 
     @classmethod
     def _recursive_resolve(cls, spec, source_type):
-        resolved_spec = {}
+        resolved_spec, refs = {}, {}
         if 'sources' in source_type.param and 'sources' in spec:
             resolved_spec['sources'] = {
                 source: cls.from_spec(source)
@@ -206,17 +167,38 @@ class Source(param.Parameterized):
         if 'source' in source_type.param and 'source' in spec:
             resolved_spec['source'] = cls.from_spec(spec.pop('source'))
         for k, v in spec.items():
-            if isinstance(v, str) and v.startswith('@'):
-                v = cls._resolve_reference(v)
+            if is_ref(v):
+                refs[k] = v
+                v = state.resolve_reference(v)
             elif isinstance(v, dict):
-                v = cls._recursive_resolve(v, source_type)
+                v, subrefs = cls._recursive_resolve(v, source_type)
+                for sk, sv in subrefs.items():
+                    refs[f'{k}.{sk}'] = sv
             if k == 'filters' and 'source' in resolved_spec:
                 source_schema = resolved_spec['source'].get_schema()
                 v = [Filter.from_spec(fspec, source_schema) for fspec in v]
             if k == 'transforms':
                 v = [Transform.from_spec(tspec) for tspec in v]
             resolved_spec[k] = v
-        return resolved_spec
+        return resolved_spec, refs
+
+    @classmethod
+    def _validate_filters(cls, filter_specs, spec, context):
+        warnings.warn(
+            'Providing filters in a Source definition is deprecated, '
+            'please declare filters as part of a Pipeline.', DeprecationWarning
+        )
+        return cls._validate_dict_subtypes('filters', Filter, filter_specs, spec, context)
+
+    @classmethod
+    def validate(cls, spec, context=None):
+        if isinstance(spec, str):
+            if spec not in context['sources']:
+                msg = f'Referenced non-existent source {spec!r}.'
+                msg = match_suggestion_message(spec, list(context['sources']), msg)
+                raise ValidationError(msg, spec, spec)
+            return spec
+        return super().validate(spec, context)
 
     @classmethod
     def from_spec(cls, spec):
@@ -235,101 +217,128 @@ class Source(param.Parameterized):
         -------
         Resolved and instantiated Source object
         """
-        if spec is None:
-            raise ValueError('Source specification empty.')
-        elif isinstance(spec, str):
+        if isinstance(spec, str):
             if spec in state.sources:
                 source = state.sources[spec]
             elif spec in state.spec.get('sources', {}):
                 source = state.load_source(spec, state.spec['sources'][spec])
-            else:
-                raise ValueError(f"Source with name '{spec}' was not found.")
             return source
 
-        spec = dict(spec)
-        source_type = Source._get_type(spec.pop('type'))
-        resolved_spec = cls._recursive_resolve(dict(spec), source_type)
-        return source_type(**resolved_spec)
+        spec = spec.copy()
+        source_type = Source._get_type(spec.pop('type', None))
+        resolved_spec, refs = cls._recursive_resolve(spec, source_type)
+        return source_type(refs=refs, **resolved_spec)
 
     def __init__(self, **params):
         from ..config import config
-        self.root = params.pop('root', config.root)
+        params['root'] = Path(params.get('root', config.root))
         super().__init__(**params)
+        self.param.watch(self.clear_cache, self._reload_params)
         self._cache = {}
         self._schema_cache = {}
 
     def _get_key(self, table, **query):
-        key = (table,)
-        for k, v in sorted(query.items()):
-            if isinstance(v, list):
-                v = tuple(v)
-            key += (k, v)
-        return key
+        sha = hashlib.sha256()
+        sha.update(table.encode('utf-8'))
+        if 'sql_transforms' in query:
+            sha.update(_generate_hash([hash(t) for t in query.pop('sql_transforms')]))
+        sha.update(_generate_hash(query))
+        return sha.hexdigest()
 
     def _get_schema_cache(self):
-        if self._schema_cache:
-            return self._schema_cache
-        elif self.cache_dir:
-            path = os.path.join(self.root, self.cache_dir, f'{self.name}.json')
-            if os.path.isfile(path):
-                with open(path) as f:
-                    return json.load(f)
-        return None
+        schema = self._schema_cache if self._schema_cache else None
+        if self.cache_dir:
+            path = self.root / self.cache_dir / f'{self.name}.json'
+            if not path.is_file():
+                return schema
+            with open(path) as f:
+                json_schema = json.load(f)
+            if schema is None:
+                schema = {}
+            for table, tschema in json_schema.items():
+                if table in schema:
+                    continue
+                for col, cschema in tschema.items():
+                    if cschema.get('type') == 'string' and cschema.get('format') == 'datetime':
+                        cschema['inclusiveMinimum'] = pd.to_datetime(
+                            cschema['inclusiveMinimum']
+                        )
+                        cschema['inclusiveMaximum'] = pd.to_datetime(
+                            cschema['inclusiveMaximum']
+                        )
+                schema[table] = tschema
+        return schema
 
     def _set_schema_cache(self, schema):
         self._schema_cache = schema
         if self.cache_dir:
-            path = Path(os.path.join(self.root, self.cache_dir))
+            path = self.root / self.cache_dir
             path.mkdir(parents=True, exist_ok=True)
-            with open(path / f'{self.name}.json', 'w') as f:
-                json.dump(schema, f)
+            try:
+                with open(path / f'{self.name}.json', 'w') as f:
+                    json.dump(schema, f, default=str)
+            except Exception as e:
+                self.param.warning(
+                    f"Could not cache schema to disk. Error while "
+                    f"serializing schema to disk: {e}"
+                )
 
     def _get_cache(self, table, **query):
+        query.pop('__dask', None)
         key = self._get_key(table, **query)
         if key in self._cache:
             return self._cache[key], not bool(query)
-        elif key[:1] in self._cache:
-            return self._cache[key[:1]], True
         elif self.cache_dir:
             if query:
-                sha = hashlib.sha256(str(key).encode('utf-8')).hexdigest()
-                filename = f'{sha}_{table}.parq'
+                filename = f'{key}_{table}.parq'
             else:
                 filename = f'{table}.parq'
-            path = os.path.join(self.root, self.cache_dir, filename)
-            if os.path.isfile(path) or os.path.isdir(path):
-                if 'dask.dataframe' in sys.modules:
-                    import dask.dataframe as dd
-                    return dd.read_parquet(path), not bool(query)
+            path = self.root / self.cache_dir / filename
+            if path.is_file():
                 return pd.read_parquet(path), not bool(query)
+            if dd and path.is_dir():
+                return dd.read_parquet(path), not bool(query)
+            path = path.with_suffix('')
+            if dd and path.is_dir():
+                return dd.read_parquet(path), not bool(query)
         return None, not bool(query)
 
     def _set_cache(self, data, table, write_to_file=True, **query):
+        query.pop('__dask', None)
         key = self._get_key(table, **query)
         self._cache[key] = data
         if self.cache_dir and write_to_file:
-            path = os.path.join(self.root, self.cache_dir)
-            Path(path).mkdir(parents=True, exist_ok=True)
+            path = self.root / self.cache_dir
+            path.mkdir(parents=True, exist_ok=True)
             if query:
-                sha = hashlib.sha256(str(key).encode('utf-8')).hexdigest()
-                filename = f'{sha}_{table}.parq'
+                filename = f'{key}_{table}.parq'
             else:
                 filename = f'{table}.parq'
+            filepath = path / filename
+            if dd:
+                if isinstance(data, dd.DataFrame):
+                    filepath = filepath.with_suffix('')
             try:
-                data.to_parquet(os.path.join(path, filename))
+                data.to_parquet(filepath)
             except Exception as e:
-                self.param.warning(f"Could not cache '{table}' to parquet"
-                                   f"file. Error during saving process: {e}")
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    shutil.rmtree(path)
+                self.param.warning(
+                    f"Could not cache '{table}' to parquet file. "
+                    f"Error during saving process: {e}"
+                )
 
-    def clear_cache(self):
+    def clear_cache(self, *events):
         """
         Clears any cached data.
         """
         self._cache = {}
         self._schema_cache = {}
         if self.cache_dir:
-            path = os.path.join(self.root, self.cache_dir)
-            if os.path.isdir(path):
+            path = self.root / self.cache_dir
+            if path.is_dir():
                 shutil.rmtree(path)
 
     @property
@@ -350,6 +359,7 @@ class Source(param.Parameterized):
             The list of available tables on this source.
         """
 
+    @cached_schema
     def get_schema(self, table=None):
         """
         Returns JSON schema describing the tables returned by the
@@ -367,12 +377,19 @@ class Source(param.Parameterized):
             JSON schema(s) for one or all the tables.
         """
         schemas = {}
-        for name in self.get_tables():
+        names = list(self.get_tables())
+        for name in names:
             if table is not None and name != table:
                 continue
             df = self.get(name, __dask=True)
             schemas[name] = get_dataframe_schema(df)['items']['properties']
-        return schemas if table is None else schemas[table]
+
+        try:
+            return schemas if table is None else schemas[table]
+        except KeyError as e:
+            msg = f"{type(self).name} does not contain '{table}'"
+            msg = match_suggestion_message(table, names, msg)
+            raise ValidationError(msg) from e
 
     def get(self, table, **query):
         """
@@ -394,21 +411,25 @@ class Source(param.Parameterized):
 
 class RESTSource(Source):
     """
-    Queries a REST API which is expected to conform to the monitoring
-    REST API specification.
+    `RESTSource` allows querying REST endpoints conforming to the Lumen REST specification.
+
+    The `url` must offer two endpoints, the `/data` endpoint must
+    return data in a records format while the `/schema` endpoint must
+    return a valid Lumen JSON schema.
     """
 
     url = param.String(doc="URL of the REST endpoint to monitor.")
 
     source_type = 'rest'
 
+    @cached_schema
     def get_schema(self, table=None):
         query = {} if table is None else {'table': table}
         response = requests.get(self.url+'/schema', params=query)
         return {table: schema['items']['properties'] for table, schema in
                 response.json().items()}
 
-    @cached()
+    @cached
     def get(self, table, **query):
         query = dict(table=table, **query)
         r = requests.get(self.url+'/data', params=query)
@@ -418,8 +439,12 @@ class RESTSource(Source):
 
 class FileSource(Source):
     """
-    Loads CSV, Excel, JSON and Parquet files using pandas.read_* or
-    dask.read_* functions.
+    `FileSource` loads CSV, Excel and Parquet files using pandas and dask `read_*` functions.
+
+    The `FileSource` can declare a list or dictionary of local or
+    remote files which are then loaded using either `pandas.read_*` or
+    `dask.dataframe.read_*` functions depending on whether `use_dask`
+    is enabled.
     """
 
     dask = param.Boolean(default=False, doc="""
@@ -433,15 +458,19 @@ class FileSource(Source):
         names are computed from the filenames, otherwise the keys are
         the names. The values must filepaths or URLs to the data:
 
-            {
-              'local' : '/home/user/local_file.csv',
-              'remote': 'https://test.com/test.csv'
-            }
+        ```
+        {
+            'local' : '/home/user/local_file.csv',
+            'remote': 'https://test.com/test.csv'
+        }
+        ```
 
         if the filepath does not have a declared extension an extension
         may be provided in a list or tuple, e.g.:
 
-            {'table': ['http://test.com/api', 'json']}
+        ```
+        {'table': ['http://test.com/api', 'json']}
+        ```
         """)
 
     use_dask = param.Boolean(default=True, doc="""
@@ -460,13 +489,14 @@ class FileSource(Source):
         'csv': {'parse_dates': True}
     }
 
+    _template_re = re.compile(r'(\$\{[\w.]+\})')
+
     source_type = 'file'
 
     def __init__(self, **params):
         if 'files' in params:
             params['tables'] = params.pop('files')
         super().__init__(**params)
-        self._template_re = re.compile('(@\{.*\})')
 
     def _load_fn(self, ext, dask=True):
         kwargs = dict(self._load_kwargs.get(ext, {}))
@@ -486,12 +516,12 @@ class FileSource(Source):
                     kwargs['orient'] = None
                 return dd.read_json, kwargs
         if ext not in self._pd_load_fns:
-            raise ValueError("File type '{ext}' not recognized and cannot be loaded.")
+            raise ValueError(f"File type '{ext}' not recognized and cannot be loaded.")
         return self._pd_load_fns[ext], kwargs
 
     def _set_cache(self, data, table, **query):
-        _, ext = self._named_files[table]
-        if ext in ('parq', 'parquet'):
+        file, ext = self._named_files[table]
+        if ext in ('parq', 'parquet') and Path(file).exists():
             query['write_to_file'] = False
         super()._set_cache(data, table, **query)
 
@@ -500,29 +530,31 @@ class FileSource(Source):
         if isinstance(self.tables, list):
             tables = {}
             for f in self.tables:
-                if f.startswith('http'):
+                if isinstance(f, str) and f.startswith('http'):
                     name = f
                 else:
-                    name = '.'.join(os.path.basename(f).split('.')[:-1])
+                    name = '.'.join(basename(f).split('.')[:-1])
                 tables[name] = f
         else:
-            tables = self.tables
+            tables = self.tables or {}
         files = {}
         for name, table in tables.items():
-            ext = None
             if isinstance(table, (list, tuple)):
                 table, ext = table
             else:
-                basename = os.path.basename(table)
-                if '.' in basename:
-                    ext = basename.split('.')[-1]
+                if isinstance(table, str) and table.startswith('http'):
+                    file = basename(urlparse(table).path)
+                else:
+                    file = basename(table)
+                ext = re.search(r"\.(\w+)$", file)
+                if ext:
+                    ext = ext.group(1)
             files[name] = (table, ext)
         return files
 
     def _resolve_template_vars(self, table):
-        for m in self._template_re.findall(table):
-            ref = f'@{m[2:-1]}'
-            values = self._resolve_reference(ref)
+        for m in self._template_re.findall(str(table)):
+            values = state.resolve_reference(f'${m[2:-1]}')
             values = ','.join([v for v in values])
             table = table.replace(m, quote(values))
         return [table]
@@ -532,10 +564,9 @@ class FileSource(Source):
 
     def _load_table(self, table, dask=True):
         df = None
-        for name, filepath in self._named_files.items():
-            filepath, ext = filepath
-            if '://' not in filepath:
-                filepath = os.path.join(self.root, filepath)
+        for name, (filepath, ext) in self._named_files.items():
+            if isinstance(filepath, Path) or '://' not in filepath:
+                filepath = self.root / filepath
             if name != table:
                 continue
             load_fn, kwargs = self._load_fn(ext, dask=dask)
@@ -568,15 +599,24 @@ class FileSource(Source):
             raise ValueError(f"Table '{table}' not found. Available tables include: {tables}.")
         return df
 
-    @cached()
+    @cached
     def get(self, table, **query):
         dask = query.pop('__dask', self.dask)
         df = self._load_table(table)
-        df = self._filter_dataframe(df, **query)
+        df = FilterTransform.apply_to(df, conditions=list(query.items()))
         return df if dask or not hasattr(df, 'compute') else df.compute()
 
 
 class JSONSource(FileSource):
+    """
+    The JSONSource is very similar to the FileSource but loads json files.
+
+    Both local and remote JSON files can be fetched by declaring them
+    as a list or dictionaries of `tables`.
+    """
+
+    cache_per_query = param.Boolean(default=False, doc="""
+        Whether to query the whole dataset or individual queries.""")
 
     chunk_size = param.Integer(default=0, doc="""
         Number of items to load per chunk if a template variable
@@ -587,10 +627,12 @@ class JSONSource(FileSource):
         names are computed from the filenames, otherwise the keys are
         the names. The values must filepaths or URLs to the data:
 
-            {
-              'local' : '/home/user/local_file.csv',
-              'remote': 'https://test.com/test.csv'
-            }
+        ```
+        {
+            'local' : '/home/user/local_file.csv',
+            'remote': 'https://test.com/test.csv'
+        }
+        ```
     """)
 
     source_type = 'json'
@@ -599,8 +641,9 @@ class JSONSource(FileSource):
         template_vars = self._template_re.findall(template)
         template_values = []
         for m in template_vars:
-            ref = f'@{m[2:-1]}'
-            values = self._resolve_reference(ref)
+            values = state.resolve_reference(f'${m[2:-1]}')
+            if not isinstance(values, list):
+                values = [values]
             template_values.append(values)
         tables = []
         cross_product = list(product(*template_values))
@@ -626,21 +669,20 @@ class JSONSource(FileSource):
     def _load_fn(self, ext, dask=True):
         return super()._load_fn('json', dask=dask)
 
-    @cached(with_query=False)
-    def get(self, table, **query):
-        return super().get(table, **query)
-
-
 
 class WebsiteSource(Source):
     """
-    Queries whether a website responds with a 400 status code.
+    `WebsiteSource` queries whether a website responds with a 400 status code.
     """
+
+    cache_per_query = param.Boolean(default=False, doc="""
+        Whether to query the whole dataset or individual queries.""")
 
     urls = param.List(doc="URLs of the websites to monitor.")
 
     source_type = 'live'
 
+    @cached_schema
     def get_schema(self, table=None):
         schema = {
             "status": {
@@ -649,11 +691,11 @@ class WebsiteSource(Source):
             }
         }
         return schema if table is None else schema[table]
-    
+
     def get_tables(self):
         return ['status']
 
-    @cached(with_query=False)
+    @cached
     def get(self, table, **query):
         data = []
         for url in self.urls:
@@ -668,6 +710,16 @@ class WebsiteSource(Source):
 
 
 class PanelSessionSource(Source):
+    """"
+    `PanelSessionSource` queries the session_info endpoint of a Panel application.
+
+    Panel applications with --rest-session-info enabled can be queried
+    about session statistics. This source makes this data available to
+    Lumen for monitoring.
+    """
+
+    cache_per_query = param.Boolean(default=False, doc="""
+        Whether to query the whole dataset or individual queries.""")
 
     endpoint = param.String(default="rest/session_info")
 
@@ -677,6 +729,7 @@ class PanelSessionSource(Source):
 
     source_type = 'session_info'
 
+    @cached_schema
     def get_schema(self, table=None):
         schema = {
             "summary": {
@@ -742,7 +795,7 @@ class PanelSessionSource(Source):
                 data.push(row)
         return data
 
-    @cached(with_query=False)
+    @cached
     def get(self, table, **query):
         data = []
         with futures.ThreadPoolExecutor(len(self.urls)) as executor:
@@ -761,6 +814,8 @@ class PanelSessionSource(Source):
 
 class JoinedSource(Source):
     """
+    `JoinedSource` performs a join on tables from one or more sources.
+
     A JoinedSource applies a join on two or more sources returning
     new table(s) with data from all sources. It iterates over the
     `tables` specification and merges the specified tables from the
@@ -775,10 +830,12 @@ class JoinedSource(Source):
     tables 'foo' and 'bar' respectively. We now want to merge these
     tables on column 'a' in Table A with column 'b' in Table B:
 
-        {'new_table': [
-          {'source': 'A', 'table': 'foo', 'index': 'a'},
-          {'source': 'B', 'table': 'bar', 'index': 'b'}
-        ]}
+    ```
+    {'new_table': [
+        {'source': 'A', 'table': 'foo', 'index': 'a'},
+        {'source': 'B', 'table': 'bar', 'index': 'b'}
+    ]}
+    ```
 
     The joined source will now publish the "new_table" with all
     columns from tables "foo" and "bar" except for the index column
@@ -786,7 +843,7 @@ class JoinedSource(Source):
     table "foo".
     """
 
-    sources = param.Dict(default={}, doc="""
+    sources = param.ClassSelector(class_=(list, dict), doc="""
         A dictionary of sources indexed by their assigned name.""")
 
     tables = param.Dict(default={}, doc="""
@@ -794,6 +851,7 @@ class JoinedSource(Source):
         and a specification of the source, table and index to merge
         on.
 
+        ```
         {"new_table": [
             {'source': <source_name>,
              'table': <table_name>,
@@ -804,13 +862,16 @@ class JoinedSource(Source):
              'index': <index_name>
             },
             ...
-        ]}""")
+        ]}
+        ```
+        """)
 
     source_type = 'join'
 
     def get_tables(self):
         return list(self.tables)
 
+    @cached_schema
     def get_schema(self, table=None):
         schemas = {}
         for name, specs in self.tables.items():
@@ -827,7 +888,7 @@ class JoinedSource(Source):
                         schema[column] = merge_schemas(col_schema, schema.get(column))
         return schemas if table is None else schemas[table]
 
-    @cached()
+    @cached
     def get(self, table, **query):
         df, left_key = None, None
         for spec in self.tables[table]:
@@ -865,55 +926,61 @@ class JoinedSource(Source):
 
 class DerivedSource(Source):
     """
+    `DerivedSource` applies filtering and transforms to tables from other sources.
+
     A DerivedSource references tables on other sources and optionally
     allows applying filters and transforms to the returned data which
     is then made available as a new (derived) table.
 
     The DerivedSource has two modes:
 
-      1) When an explicit `tables` specification is provided full 
-         control over the exact tables to filter and transform is
-         available. This is referred to as the 'table' mode.
-      2) When a `source` is declared all tables on that Source are
-         mirrored and filtered and transformed acccording to the
-         supplied `filters` and `transforms`. This is referred to as
-         'mirror' mode. 
+    **Table Mode**
 
-    1. Table Mode
-    ~~~~~~~~~~~~~
+    When an explicit `tables` specification is provided full control
+    over the exact tables to filter and transform is available. This
+    is referred to as the 'table' mode.
 
     In 'table' mode the tables can reference any table on any source
     using the reference syntax and declare filters and transforms to
     apply to that specific table, e.g. a table specification might
     look like this:
 
-      {
-        'derived_table': 
-        {
-          'source': 'original_source',
-          'table': 'original_table'
-          'filters': [
-            ...
-          ],
-          'transforms': [
-            ...
-          ]
-        }
+    ```
+    {
+      'derived_table': {
+        'source': 'original_source',
+        'table': 'original_table'
+        'filters': [
+          ...
+        ],
+        'transforms': [
+          ...
+        ]
       }
+    }
+    ```
 
-    2. Mirror
-    ~~~~~~~~~
+    **Mirror**
+
+    When a `source` is declared all tables on that Source are mirrored
+    and filtered and transformed according to the supplied `filters`
+    and `transforms`. This is referred to as 'mirror' mode.
 
     In mirror mode the DerivedSource may reference an existing source
     directly, e.g.:
-    
-      {
+
+    ```
+    {
         'type': 'derived',
         'source': 'original_source',
         'filters': [...],
         'transforms': [...],
-      }
+    }
+    ```
     """
+
+    cache_per_query = param.Boolean(default=False, doc="""
+        Whether to query the whole dataset or individual queries.""")
 
     filters = param.List(doc="""
         A list of filters to apply to all tables of this source.""")
@@ -929,13 +996,18 @@ class DerivedSource(Source):
 
     source_type = 'derived'
 
+    @classmethod
+    def _validate_filters(cls, *args, **kwargs):
+        return cls._validate_list_subtypes('filters', Filter, *args, **kwargs)
+
     def _get_source_table(self, table):
         if self.tables:
             spec = self.tables.get(table)
             if spec is None:
-                raise ValueError(f"Table '{table}' was not declared on the"
-                                 "DerivedSource. Available tables include "
-                                 f"{list(self.tables)}")
+                raise ValidationError(
+                    f"Table '{table}' was not declared on the DerivedSource. "
+                    f"Available tables include {list(self.tables)}."
+                )
             source, table = spec['source'], spec['table']
             filters = spec.get('filters', []) + self.filters
         else:
@@ -944,16 +1016,17 @@ class DerivedSource(Source):
         query = dict({filt.field: filt.value for filt in filters})
         return source.get(table, **query)
 
-    @cached(with_query=False)
+    @cached
     def get(self, table, **query):
         df = self._get_source_table(table)
         if self.tables:
             transforms = self.tables[table].get('transforms', []) + self.transforms
         else:
             transforms = self.transforms
+        transforms.append(FilterTransform(conditions=list(query.items())))
         for transform in transforms:
             df = transform.apply(df)
-        return self._filter_dataframe(df, **query)
+        return df
 
     get.__doc__ = Source.get.__doc__
 
@@ -967,3 +1040,5 @@ class DerivedSource(Source):
                 spec['source'].clear_cache()
         else:
             self.source.clear_cache()
+
+__all__ = [name for name, obj in locals().items() if isinstance(obj, type) and issubclass(obj, Source)]
